@@ -77,7 +77,13 @@ export class StorageService implements OnModuleInit {
 
   async uploadFile(localPath: string, key: string, contentType: string): Promise<string> {
     const fileStream = fs.createReadStream(localPath);
-    await this.s3Client.send(
+    const streamError = new Promise<never>((_, reject) => {
+      fileStream.on('error', (err) => {
+        this.logger.error(`Failed to read file ${localPath}:`, err);
+        reject(err);
+      });
+    });
+    const upload = this.s3Client.send(
       new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
@@ -85,6 +91,7 @@ export class StorageService implements OnModuleInit {
         ContentType: contentType,
       }),
     );
+    await Promise.race([upload, streamError]);
     return key;
   }
 

@@ -125,7 +125,7 @@ function JobStatusBadge({ status }: { status: string }) {
     running: "border-blue-800 bg-blue-950 text-blue-400",
   };
   const cls =
-    variants[status.toLowerCase()] ??
+    variants[(status || '').toLowerCase()] ??
     "border-zinc-700 bg-zinc-800 text-zinc-400";
 
   return (
@@ -174,7 +174,12 @@ export default function VideoDetailPage() {
   // ── Copy URL ──
   async function handleCopyUrl() {
     if (!video?.id) return;
-    await navigator.clipboard.writeText(backendVideoStreamUrl(video.id));
+    const fullUrl = `${window.location.origin}${backendVideoStreamUrl(video.id)}`;
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+    } catch {
+      // Clipboard not available (e.g. HTTP context)
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -316,16 +321,16 @@ export default function VideoDetailPage() {
 
                 {/* Progress (if running) */}
                 {video.job &&
-                  video.job.status.toLowerCase() === "running" && (
+                  (video.job.status || '').toLowerCase() === "running" && (
                     <div className="mt-1">
                       <div className="mb-1 flex justify-between text-xs text-zinc-500">
                         <span>Tiến trình</span>
-                        <span>{video.job.progress}%</span>
+                        <span>{video.job.progress ?? 0}%</span>
                       </div>
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
                         <div
                           className="h-full rounded-full bg-blue-500 transition-all duration-500"
-                          style={{ width: `${video.job.progress}%` }}
+                          style={{ width: `${video.job.progress ?? 0}%` }}
                         />
                       </div>
                     </div>
@@ -338,7 +343,7 @@ export default function VideoDetailPage() {
                   <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
                     Nội dung kịch bản
                   </h2>
-                  <div className="max-h-56 overflow-y-auto rounded-xl border border-zinc-900 bg-zinc-900/60 px-4 py-3 text-sm leading-relaxed text-zinc-300 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+                  <div className="max-h-56 overflow-y-auto rounded-xl border border-zinc-900 bg-zinc-900/60 px-4 py-3 text-sm leading-relaxed text-zinc-300">
                     <p className="whitespace-pre-wrap">{video.script}</p>
                   </div>
                 </div>
@@ -351,8 +356,6 @@ export default function VideoDetailPage() {
                 <a
                   href={proxiedVideoUrl}
                   download={`${video.title}.mp4`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-200 transition-all hover:border-zinc-700 hover:bg-zinc-800 hover:text-white active:scale-95"
                   aria-label="Tải video về máy"
                 >

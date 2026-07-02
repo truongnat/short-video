@@ -2,11 +2,13 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../storage/storage.service';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Logger } from '@nestjs/common';
 import ffmpeg from 'fluent-ffmpeg';
+
+export const cancelledJobs = new Set<string>();
 
 @Processor('video-generation', { concurrency: 1 })
 export class VideoProcessor extends WorkerHost {
@@ -22,6 +24,12 @@ export class VideoProcessor extends WorkerHost {
   async process(job: Job<any, any, string>): Promise<any> {
     const { jobId, ideaId, subject, script, language, config } = job.data;
     this.logger.log(`Processing video generation job: ${jobId}`);
+
+    // Check if job was cancelled before starting
+    if (cancelledJobs.has(jobId)) {
+      cancelledJobs.delete(jobId);
+      throw new Error('Job was cancelled before processing started');
+    }
 
     // Update job status to running in DB
     await this.prisma.generationJob.update({
@@ -91,15 +99,31 @@ export class VideoProcessor extends WorkerHost {
     );
 
     return new Promise((resolve, reject) => {
-      // Spawn python CLI using uv run
-      const pyProcess = spawn(
-        'uv',
-        ['run', '--project', 'engine', 'python', ...args],
-        {
-          cwd: projectRoot,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-        },
-      );
+      let pyProcess: ChildProcess;
+      let logQueue = Promise.resolve();
+      let settled = false;
+
+      const cleanup = () => {
+        if (pyProcess && !pyProcess.killed) {
+          pyProcess.kill('SIGTERM');
+          setTimeout(() => {
+            if (pyProcess && !pyProcess.killed) pyProcess.kill('SIGKILL');
+          }, 5000);
+        }
+      };
+
+      const markFailed = async (errMsg: string) => {
+        cleanup();
+        this.logger.error(`Job ${jobId} failed: ${errMsg}`);
+        await this.prisma.generationJob.update({
+          where: { id: jobId },
+          data: {
+            status: 'failed',
+            errorMessage: errMsg,
+            finishedAt: new Date(),
+          },
+        }).catch((err) => this.logger.error('Failed to mark job as failed:', err));
+      };
 
       const logAndSave = async (
         dataStr: string,
@@ -108,6 +132,13 @@ export class VideoProcessor extends WorkerHost {
         const lines = dataStr.split(/\r?\n/).filter((line) => line.trim());
         for (const line of lines) {
           this.logger.debug(`[Engine ${stream}] ${line}`);
+
+          // Check if cancelled
+          if (cancelledJobs.has(jobId)) {
+            cancelledJobs.delete(jobId);
+            cleanup();
+            return;
+          }
 
           // Write log line to DB
           await this.prisma.jobLog
@@ -123,8 +154,6 @@ export class VideoProcessor extends WorkerHost {
             );
 
           // Analyze log to update progress
-          // Order matches actual engine pipeline in task.py:
-          // script → terms → audio → subtitle → materials → combining → generating
           let progress = -1;
           let status = '';
 
@@ -165,7 +194,7 @@ export class VideoProcessor extends WorkerHost {
           }
 
           if (progress !== -1) {
-            const updateData: any = { progress };
+            const updateData: Record<string, any> = { progress };
             if (status) {
               updateData.status = status;
             }
@@ -179,14 +208,55 @@ export class VideoProcessor extends WorkerHost {
         }
       };
 
-      pyProcess.stdout.on('data', (data) =>
-        logAndSave(data.toString(), 'stdout'),
-      );
-      pyProcess.stderr.on('data', (data) =>
-        logAndSave(data.toString(), 'stderr'),
+      // Spawn python CLI using uv run
+      pyProcess = spawn(
+        'uv',
+        ['run', '--project', 'engine', 'python', ...args],
+        {
+          cwd: projectRoot,
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        },
       );
 
+      if (pyProcess.stdout) {
+        pyProcess.stdout.on('data', (data) => {
+          logQueue = logQueue.then(() => logAndSave(data.toString(), 'stdout'));
+        });
+        pyProcess.stdout.on('error', (err) => {
+          this.logger.error(`stdout stream error: ${err.message}`);
+        });
+      }
+
+      if (pyProcess.stderr) {
+        pyProcess.stderr.on('data', (data) => {
+          logQueue = logQueue.then(() => logAndSave(data.toString(), 'stderr'));
+        });
+        pyProcess.stderr.on('error', (err) => {
+          this.logger.error(`stderr stream error: ${err.message}`);
+        });
+      }
+
+      pyProcess.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        this.logger.error(`Failed to spawn process: ${err.message}`);
+        markFailed(`Process spawn failed: ${err.message}`);
+        reject(err);
+      });
+
       pyProcess.on('close', async (code) => {
+        if (settled) return;
+        settled = true;
+        // Wait for all pending log writes
+        await logQueue;
+
+        // Check if cancelled during processing
+        if (cancelledJobs.has(jobId)) {
+          cancelledJobs.delete(jobId);
+          reject(new Error('Job was cancelled'));
+          return;
+        }
+
         this.logger.log(`Engine CLI completed with code: ${code}`);
 
         if (code !== 0) {
@@ -203,6 +273,24 @@ export class VideoProcessor extends WorkerHost {
         }
 
         try {
+          // Check if video already exists (idempotency for worker retries)
+          const existing = await this.prisma.video.findFirst({
+            where: { jobId },
+          });
+          if (existing) {
+            this.logger.log(`Video record already exists for job ${jobId}, skipping creation`);
+            await this.prisma.generationJob.update({
+              where: { id: jobId },
+              data: {
+                status: 'completed',
+                progress: 100,
+                finishedAt: new Date(),
+              },
+            });
+            resolve(existing);
+            return;
+          }
+
           // Process success
           await this.prisma.generationJob.update({
             where: { id: jobId },
@@ -224,15 +312,24 @@ export class VideoProcessor extends WorkerHost {
           const thumbnailFilename = 'thumbnail.jpg';
           const thumbnailPath = path.join(taskStorageDir, thumbnailFilename);
           await new Promise<void>((res, rej) => {
+            const timeout = setTimeout(() => {
+              rej(new Error('ffmpeg thumbnail generation timed out after 60s'));
+            }, 60000);
             ffmpeg(finalVideoPath)
               .screenshots({
                 count: 1,
-                timemarks: ['2'], // Extract at 2 seconds
+                timemarks: ['0'],
                 filename: thumbnailFilename,
                 folder: taskStorageDir,
               })
-              .on('end', () => res())
-              .on('error', (err: any) => rej(err));
+              .on('end', () => {
+                clearTimeout(timeout);
+                res();
+              })
+              .on('error', (err: any) => {
+                clearTimeout(timeout);
+                rej(err);
+              });
           });
 
           // Upload files to MinIO

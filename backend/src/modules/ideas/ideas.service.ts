@@ -89,10 +89,14 @@ export class IdeasService {
     });
   }
 
-  async brainstorm(dto: { topic: string; language: string }): Promise<any[]> {
+  async brainstorm(dto: { topic: string; language: string; existingTitles?: string[] }): Promise<any[]> {
+    const existingTitles = dto.existingTitles || [];
     const generated = await this.llm.generateIdeas(dto.topic, dto.language);
     const createdIdeas = [];
     for (const item of generated) {
+      if (existingTitles.some((t) => t.toLowerCase().trim() === item.title.toLowerCase().trim())) {
+        continue;
+      }
       const created = await this.prisma.idea.create({
         data: {
           title: item.title,
@@ -105,7 +109,6 @@ export class IdeasService {
       createdIdeas.push(created);
     }
 
-    // Trigger script generation in the background for all brainstormed ideas!
     for (const idea of createdIdeas) {
       this.generateScript(idea.id).catch((err) => {
         this.logger.error(`Failed to auto-generate script for brainstormed idea ${idea.id}: ${err.message}`);
@@ -119,7 +122,6 @@ export class IdeasService {
     const idea = await this.findOne(id);
     const generated = await this.llm.generateIdeas(idea.topic, idea.language);
     
-    // Save generated ideas to database as drafts
     const createdIdeas = [];
     for (const item of generated) {
       const created = await this.prisma.idea.create({
@@ -137,13 +139,49 @@ export class IdeasService {
     return createdIdeas;
   }
 
-  async generateScript(id: string): Promise<string> {
-    await this.prisma.idea.update({
-      where: { id },
+  async batchGenerateVideo(topic: string, config: any) {
+    const ideas = await this.prisma.idea.findMany({
+      where: {
+        topic,
+        script: { not: null },
+        status: 'ready',
+      },
+    });
+
+    const jobs = [];
+    for (const idea of ideas) {
+      const job = await this.prisma.generationJob.create({
+        data: {
+          ideaId: idea.id,
+          status: 'queued',
+          config: config || {},
+        },
+      });
+      await this.queueService.addVideoJob(
+        job.id,
+        idea.id,
+        idea.title,
+        idea.script || undefined,
+        idea.language,
+        config || {},
+      );
+      jobs.push(job);
+    }
+    return { topic, count: jobs.length, jobs };
+  }
+
+  async generateScript(id: string): Promise<string | null> {
+    // Atomic check: only generate if currently draft
+    const result = await this.prisma.idea.updateMany({
+      where: { id, status: 'draft' },
       data: { status: 'generating' },
     });
+    if (result.count === 0) {
+      return null; // Already generating, already has script, or not found
+    }
+
     const idea = await this.findOne(id);
-    const taskId = `script-gen-${Date.now()}`;
+    const taskId = `script-gen-${crypto.randomUUID()}`;
     const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
     const engineDir = path.join(projectRoot, 'engine');
     const taskStorageDir = path.join(engineDir, 'storage', 'tasks', taskId);
@@ -161,33 +199,40 @@ export class IdeasService {
     }
 
     return new Promise((resolve, reject) => {
+      let settled = false;
       const pyProcess = spawn('uv', ['run', '--project', 'engine', 'python', ...args], {
         cwd: projectRoot,
       });
 
+      const cg = () => this.cleanupScriptGeneration(id, taskStorageDir).catch(() => {});
+
+      pyProcess.on('error', (err) => {
+        if (!settled) {
+          settled = true;
+          cg();
+          reject(err);
+        }
+      });
+
       pyProcess.on('close', async (code) => {
+        if (settled) return;
+        settled = true;
+
         if (code !== 0) {
-          await this.prisma.idea.update({
-            where: { id },
-            data: { status: 'draft' },
-          }).catch(() => {});
+          cg();
           return reject(new Error(`Tạo kịch bản thất bại với mã lỗi ${code}`));
         }
 
         try {
           const scriptJsonPath = path.join(taskStorageDir, 'script.json');
           if (!fs.existsSync(scriptJsonPath)) {
-            await this.prisma.idea.update({
-              where: { id },
-              data: { status: 'draft' },
-            }).catch(() => {});
+            cg();
             return reject(new Error('Không tìm thấy file kịch bản output'));
           }
 
           const scriptData = JSON.parse(fs.readFileSync(scriptJsonPath, 'utf8'));
           const generatedScript = scriptData.script;
 
-          // Update idea in database
           await this.prisma.idea.update({
             where: { id },
             data: {
@@ -196,21 +241,36 @@ export class IdeasService {
             },
           });
 
-          // Cleanup temp folder
-          if (fs.existsSync(taskStorageDir)) {
-            fs.rmSync(taskStorageDir, { recursive: true, force: true });
-          }
-
+          await this.cleanupTaskDir(taskStorageDir);
           resolve(generatedScript);
         } catch (err) {
-          await this.prisma.idea.update({
-            where: { id },
-            data: { status: 'draft' },
-          }).catch(() => {});
+          cg();
           reject(err);
         }
       });
     });
+  }
+
+  private async cleanupScriptGeneration(id: string, taskStorageDir: string) {
+    try {
+      await this.prisma.idea.update({
+        where: { id },
+        data: { status: 'draft' },
+      });
+    } catch (err) {
+      this.logger.error('Failed to reset idea status to draft:', err);
+    }
+    this.cleanupTaskDir(taskStorageDir);
+  }
+
+  private cleanupTaskDir(dir: string) {
+    if (fs.existsSync(dir)) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup errors
+      }
+    }
   }
 
   async generateVideo(id: string, config: any) {

@@ -1,157 +1,46 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import {
-  Settings,
-  Save,
-  Key,
-  Sliders,
-  Database,
-  Loader2,
-  CheckCircle2,
-  Circle,
-  Eye,
-  EyeOff,
-  Zap,
+  Settings, Save, Key, Sliders, Database, Loader2,
+  CheckCircle2, Circle, Eye, EyeOff, Zap,
+  Image, Mic, Video, Cpu,
 } from 'lucide-react';
 
 // -------------------------------------------------------------------
 // LLM Provider definitions
 // -------------------------------------------------------------------
 const LLM_PROVIDERS = [
-  {
-    id: 'gemini',
-    name: 'Google Gemini',
-    description: 'Gemini 2.5 Flash / Pro',
-    apiKeyField: 'gemini_api_key',
-    modelField: 'gemini_model_name',
-    defaultModel: 'gemini-2.5-flash',
-    keyPlaceholder: 'AIza…',
-    keyHint: 'Lấy key tại: aistudio.google.com',
-    color: 'text-blue-400',
-    bg: 'bg-blue-500/10',
-    border: 'border-blue-900/40',
-  },
-  {
-    id: 'groq',
-    name: 'Groq Cloud',
-    description: 'Llama 3.3 70B / 8B siêu nhanh',
-    apiKeyField: 'groq_api_key',
-    modelField: 'groq_model_name',
-    defaultModel: 'llama-3.3-70b-versatile',
-    keyPlaceholder: 'gsk_…',
-    keyHint: 'Lấy key tại: console.groq.com',
-    color: 'text-orange-400',
-    bg: 'bg-orange-500/10',
-    border: 'border-orange-900/40',
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    description: 'GPT-4o / GPT-4o-mini',
-    apiKeyField: 'openai_api_key',
-    modelField: 'openai_model_name',
-    defaultModel: 'gpt-4o-mini',
-    keyPlaceholder: 'sk-…',
-    keyHint: 'Lấy key tại: platform.openai.com',
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-500/10',
-    border: 'border-emerald-900/40',
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    description: 'DeepSeek Chat / Reasoner',
-    apiKeyField: 'deepseek_api_key',
-    modelField: 'deepseek_model_name',
-    defaultModel: 'deepseek-chat',
-    keyPlaceholder: 'sk-…',
-    keyHint: 'Lấy key tại: platform.deepseek.com',
-    color: 'text-violet-400',
-    bg: 'bg-violet-500/10',
-    border: 'border-violet-900/40',
-  },
-  {
-    id: 'moonshot',
-    name: 'Moonshot (Kimi)',
-    description: 'Moonshot v1-8k / 32k / 128k',
-    apiKeyField: 'moonshot_api_key',
-    modelField: 'moonshot_model_name',
-    defaultModel: 'moonshot-v1-8k',
-    keyPlaceholder: 'sk-…',
-    keyHint: 'Lấy key tại: platform.moonshot.cn',
-    color: 'text-indigo-400',
-    bg: 'bg-indigo-500/10',
-    border: 'border-indigo-900/40',
-  },
-  {
-    id: 'qwen',
-    name: 'Alibaba Qwen',
-    description: 'Qwen-Max / Qwen-Plus',
-    apiKeyField: 'qwen_api_key',
-    modelField: 'qwen_model_name',
-    defaultModel: 'qwen-max',
-    keyPlaceholder: 'sk-…',
-    keyHint: 'Lấy key tại: dashscope.aliyun.com',
-    color: 'text-amber-400',
-    bg: 'bg-amber-500/10',
-    border: 'border-amber-900/40',
-  },
-  {
-    id: 'azure',
-    name: 'Azure OpenAI',
-    description: 'GPT-4 / GPT-3.5 Turbo qua Azure',
-    apiKeyField: 'azure_api_key',
-    modelField: 'azure_model_name',
-    defaultModel: 'gpt-35-turbo',
-    keyPlaceholder: 'Azure API Key…',
-    keyHint: 'Cần cấu hình thêm Azure Base URL',
-    color: 'text-sky-400',
-    bg: 'bg-sky-500/10',
-    border: 'border-sky-900/40',
-  },
-  {
-    id: 'grok',
-    name: 'xAI Grok',
-    description: 'Grok-4 từ xAI',
-    apiKeyField: 'grok_api_key',
-    modelField: 'grok_model_name',
-    defaultModel: 'grok-4.3',
-    keyPlaceholder: 'xai-…',
-    keyHint: 'Lấy key tại: console.x.ai',
-    color: 'text-zinc-300',
-    bg: 'bg-zinc-500/10',
-    border: 'border-zinc-700/40',
-  },
-  {
-    id: 'volcengine',
-    name: 'Volcengine (Doubao)',
-    description: 'Doubao Seed 2.1 Turbo',
-    apiKeyField: 'volcengine_api_key',
-    modelField: 'volcengine_model_name',
-    defaultModel: 'doubao-seed-2-1-turbo-260628',
-    keyPlaceholder: 'API Key…',
-    keyHint: 'Nền tảng AI của Bytedance',
-    color: 'text-rose-400',
-    bg: 'bg-rose-500/10',
-    border: 'border-rose-900/40',
-  },
+  { id: 'gemini',     name: 'Google Gemini',          description: 'Gemini 2.5 Flash / Pro',            apiKeyField: 'gemini_api_key',      modelField: 'gemini_model_name',    defaultModel: 'gemini-2.5-flash',      keyPlaceholder: 'AIza…',             keyHint: 'aistudio.google.com',        color: 'text-blue-400',    bg: 'bg-blue-500/10',     border: 'border-blue-900/40' },
+  { id: 'groq',       name: 'Groq Cloud',             description: 'Llama 3.3 70B / 8B',               apiKeyField: 'groq_api_key',        modelField: 'groq_model_name',      defaultModel: 'llama-3.3-70b-versatile', keyPlaceholder: 'gsk_…',           keyHint: 'console.groq.com',           color: 'text-orange-400',  bg: 'bg-orange-500/10',  border: 'border-orange-900/40' },
+  { id: 'openai',     name: 'OpenAI',                 description: 'GPT-4o / GPT-4o-mini',              apiKeyField: 'openai_api_key',      modelField: 'openai_model_name',    defaultModel: 'gpt-4o-mini',         keyPlaceholder: 'sk-…',              keyHint: 'platform.openai.com',        color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-900/40' },
+  { id: 'deepseek',   name: 'DeepSeek',               description: 'DeepSeek Chat / Reasoner',          apiKeyField: 'deepseek_api_key',    modelField: 'deepseek_model_name',  defaultModel: 'deepseek-chat',       keyPlaceholder: 'sk-…',              keyHint: 'platform.deepseek.com',      color: 'text-violet-400',  bg: 'bg-violet-500/10',  border: 'border-violet-900/40' },
+  { id: 'moonshot',   name: 'Moonshot (Kimi)',        description: 'Moonshot v1-8k / 32k / 128k',      apiKeyField: 'moonshot_api_key',    modelField: 'moonshot_model_name',  defaultModel: 'moonshot-v1-8k',      keyPlaceholder: 'sk-…',              keyHint: 'platform.moonshot.cn',       color: 'text-indigo-400',  bg: 'bg-indigo-500/10',  border: 'border-indigo-900/40' },
+  { id: 'qwen',       name: 'Alibaba Qwen',           description: 'Qwen-Max / Qwen-Plus',             apiKeyField: 'qwen_api_key',        modelField: 'qwen_model_name',      defaultModel: 'qwen-max',            keyPlaceholder: 'sk-…',              keyHint: 'dashscope.aliyun.com',       color: 'text-amber-400',  bg: 'bg-amber-500/10',  border: 'border-amber-900/40' },
+  { id: 'azure',      name: 'Azure OpenAI',           description: 'GPT-4 / GPT-3.5 Turbo qua Azure',  apiKeyField: 'azure_api_key',       modelField: 'azure_model_name',     defaultModel: 'gpt-35-turbo',        keyPlaceholder: 'Azure API Key…',     keyHint: 'Cần thêm Azure Base URL',    color: 'text-sky-400',    bg: 'bg-sky-500/10',     border: 'border-sky-900/40' },
+  { id: 'grok',       name: 'xAI Grok',              description: 'Grok-4 từ xAI',                    apiKeyField: 'grok_api_key',        modelField: 'grok_model_name',      defaultModel: 'grok-4.3',            keyPlaceholder: 'xai-…',             keyHint: 'console.x.ai',               color: 'text-zinc-300',  bg: 'bg-zinc-500/10',   border: 'border-zinc-700/40' },
+  { id: 'volcengine', name: 'Volcengine (Doubao)',    description: 'Doubao Seed 2.1 Turbo',            apiKeyField: 'volcengine_api_key',  modelField: 'volcengine_model_name', defaultModel: 'doubao-seed-2-1-turbo-260628', keyPlaceholder: 'API Key…', keyHint: 'Nền tảng AI Bytedance', color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-900/40' },
 ];
 
 // -------------------------------------------------------------------
-// Helper: mask API key for display
+// Tabs
 // -------------------------------------------------------------------
-function ApiKeyInput({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-}) {
+const TABS = [
+  { id: 'llm',    label: 'AI Providers',  icon: Zap },
+  { id: 'media',  label: 'Media Sources', icon: Image },
+  { id: 'tts',    label: 'TTS & Voice',   icon: Mic },
+  { id: 'video',  label: 'Video Defaults', icon: Video },
+  { id: 'advanced', label: 'Advanced',    icon: Cpu },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
+
+// -------------------------------------------------------------------
+// Helpers
+// -------------------------------------------------------------------
+function ApiKeyInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
@@ -162,14 +51,60 @@ function ApiKeyInput({
         placeholder={placeholder}
         className="w-full px-3 py-2 pr-9 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600 font-mono placeholder-zinc-600"
       />
-      <button
-        type="button"
-        onClick={() => setShow((s) => !s)}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors"
-        tabIndex={-1}
-      >
+      <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors" tabIndex={-1}>
         {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
       </button>
+    </div>
+  );
+}
+
+function TextInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600 font-mono placeholder-zinc-600"
+    />
+  );
+}
+
+function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600"
+    >
+      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+function SectionCard({ icon: Icon, title, description, children }: { icon: any; title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-zinc-900 overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-zinc-900 bg-zinc-950">
+        <Icon className="w-4 h-4 text-zinc-400" />
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        {description && <span className="ml-auto text-[10px] text-zinc-500 font-medium">{description}</span>}
+      </div>
+      <div className="bg-zinc-950">{children}</div>
+    </div>
+  );
+}
+
+function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="px-5 py-3.5 border-b border-zinc-900/60 last:border-b-0">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-shrink-0 min-w-[140px]">
+          <p className="text-xs font-semibold text-zinc-300">{label}</p>
+          {hint && <p className="text-[10px] text-zinc-600 mt-0.5">{hint}</p>}
+        </div>
+        <div className="flex-1 max-w-md">{children}</div>
+      </div>
     </div>
   );
 }
@@ -179,37 +114,81 @@ function ApiKeyInput({
 // -------------------------------------------------------------------
 export default function SystemSettings() {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<TabId>('llm');
 
-  // Flat state: provider -> { apiKey, model }
+  // LLM state
   const [activeProvider, setActiveProvider] = useState('gemini');
-  const [providerState, setProviderState] = useState<
-    Record<string, { apiKey: string; model: string }>
-  >(() =>
-    Object.fromEntries(
-      LLM_PROVIDERS.map((p) => [p.id, { apiKey: '', model: p.defaultModel }])
-    )
+  const [providerState, setProviderState] = useState<Record<string, { apiKey: string; model: string }>>(
+    () => Object.fromEntries(LLM_PROVIDERS.map((p) => [p.id, { apiKey: '', model: p.defaultModel }]))
   );
 
-  // Other settings
+  // Media source state
+  const [pexelsApiKeys, setPexelsApiKeys] = useState('');
+  const [pixabayApiKeys, setPixabayApiKeys] = useState('');
+  const [coverrApiKeys, setCoverrApiKeys] = useState('');
+  const [twelvelabsApiKeys, setTwelvelabsApiKeys] = useState('');
+  const [twelvelabsRerank, setTwelvelabsRerank] = useState('false');
+
+  // TTS state
   const [voice, setVoice] = useState('vi-VN-HoaiMyNeural');
+  const [speechKey, setSpeechKey] = useState('');
+  const [speechRegion, setSpeechRegion] = useState('');
+  const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
+  const [elevenlabsModelId, setElevenlabsModelId] = useState('eleven_multilingual_v2');
+  const [siliconflowApiKey, setSiliconflowApiKey] = useState('');
+  const [chatterboxBaseUrl, setChatterboxBaseUrl] = useState('http://127.0.0.1:4123/v1');
+
+  // Video defaults state
   const [ratio, setRatio] = useState('9:16');
   const [source, setSource] = useState('pexels');
+  const [subtitleProvider, setSubtitleProvider] = useState('edge');
+  const [edgeTtsTimeout, setEdgeTtsTimeout] = useState('30');
+
+  // Advanced state
+  const [tlsVerify, setTlsVerify] = useState('true');
+  const [enableRedis, setEnableRedis] = useState('false');
+  const [whisperModelSize, setWhisperModelSize] = useState('large-v3');
+  const [whisperDevice, setWhisperDevice] = useState('CPU');
+  const [whisperComputeType, setWhisperComputeType] = useState('int8');
 
   const [savedOk, setSavedOk] = useState(false);
+  const initialDataLoaded = useRef(false);
 
-  const { data = {}, isLoading } = useQuery<any>({
+  const { data = {}, isLoading, isError } = useQuery<any>({
     queryKey: ['settings'],
     queryFn: () => api.get('/settings').then((res) => res.data),
   });
 
-  // Hydrate form from fetched settings
   useEffect(() => {
     if (!data || Object.keys(data).length === 0) return;
+    if (initialDataLoaded.current) return;
+    initialDataLoaded.current = true;
 
     if (data.llm_provider) setActiveProvider(data.llm_provider);
     if (data.default_voice) setVoice(data.default_voice);
     if (data.default_aspect_ratio) setRatio(data.default_aspect_ratio);
     if (data.default_video_source) setSource(data.default_video_source);
+
+    if (data.pexels_api_keys) setPexelsApiKeys(data.pexels_api_keys);
+    if (data.pixabay_api_keys) setPixabayApiKeys(data.pixabay_api_keys);
+    if (data.coverr_api_keys) setCoverrApiKeys(data.coverr_api_keys);
+    if (data.twelvelabs_api_keys) setTwelvelabsApiKeys(data.twelvelabs_api_keys);
+    if (data.twelvelabs_rerank_terms) setTwelvelabsRerank(data.twelvelabs_rerank_terms);
+
+    if (data.speech_key) setSpeechKey(data.speech_key);
+    if (data.speech_region) setSpeechRegion(data.speech_region);
+    if (data.elevenlabs_api_key) setElevenlabsApiKey(data.elevenlabs_api_key);
+    if (data.elevenlabs_model_id) setElevenlabsModelId(data.elevenlabs_model_id);
+    if (data.siliconflow_api_key) setSiliconflowApiKey(data.siliconflow_api_key);
+    if (data.chatterbox_base_url) setChatterboxBaseUrl(data.chatterbox_base_url);
+
+    if (data.subtitle_provider) setSubtitleProvider(data.subtitle_provider);
+    if (data.edge_tts_timeout) setEdgeTtsTimeout(data.edge_tts_timeout);
+    if (data.tls_verify) setTlsVerify(data.tls_verify);
+    if (data.enable_redis) setEnableRedis(data.enable_redis);
+    if (data.whisper_model_size) setWhisperModelSize(data.whisper_model_size);
+    if (data.whisper_device) setWhisperDevice(data.whisper_device);
+    if (data.whisper_compute_type) setWhisperComputeType(data.whisper_compute_type);
 
     setProviderState((prev) => {
       const next = { ...prev };
@@ -223,12 +202,19 @@ export default function SystemSettings() {
     });
   }, [data]);
 
+  const [saveError, setSaveError] = useState('');
+
   const saveMutation = useMutation({
     mutationFn: (payload: Record<string, string>) => api.patch('/settings', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       setSavedOk(true);
+      setSaveError('');
       setTimeout(() => setSavedOk(false), 3000);
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi không xác định';
+      setSaveError(msg);
     },
   });
 
@@ -240,6 +226,24 @@ export default function SystemSettings() {
       default_voice: voice,
       default_aspect_ratio: ratio,
       default_video_source: source,
+      pexels_api_keys: pexelsApiKeys,
+      pixabay_api_keys: pixabayApiKeys,
+      coverr_api_keys: coverrApiKeys,
+      twelvelabs_api_keys: twelvelabsApiKeys,
+      twelvelabs_rerank_terms: twelvelabsRerank,
+      speech_key: speechKey,
+      speech_region: speechRegion,
+      elevenlabs_api_key: elevenlabsApiKey,
+      elevenlabs_model_id: elevenlabsModelId,
+      siliconflow_api_key: siliconflowApiKey,
+      chatterbox_base_url: chatterboxBaseUrl,
+      subtitle_provider: subtitleProvider,
+      edge_tts_timeout: edgeTtsTimeout,
+      tls_verify: tlsVerify,
+      enable_redis: enableRedis,
+      whisper_model_size: whisperModelSize,
+      whisper_device: whisperDevice,
+      whisper_compute_type: whisperComputeType,
     };
 
     for (const p of LLM_PROVIDERS) {
@@ -250,17 +254,6 @@ export default function SystemSettings() {
     saveMutation.mutate(payload);
   };
 
-  const updateProviderField = (
-    providerId: string,
-    field: 'apiKey' | 'model',
-    value: string
-  ) => {
-    setProviderState((prev) => ({
-      ...prev,
-      [providerId]: { ...prev[providerId], [field]: value },
-    }));
-  };
-
   return (
     <div className="max-w-4xl space-y-6">
       <div>
@@ -269,190 +262,259 @@ export default function SystemSettings() {
           Cấu hình Hệ thống
         </h2>
         <p className="text-xs text-zinc-500 mt-1">
-          Quản lý các khóa API AI, tham số sinh video mặc định và lưu trữ.
+          Quản lý khóa API, nguồn tư liệu, giọng đọc và tham số mặc định cho engine.
         </p>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <div className="flex justify-center items-center py-20">
+          <p className="text-sm text-rose-400">Không thể tải cấu hình. Vui lòng thử lại sau.</p>
+        </div>
+      ) : isLoading ? (
         <div className="flex justify-center items-center py-20">
           <Loader2 className="w-7 h-7 text-zinc-600 animate-spin" />
         </div>
       ) : (
         <form onSubmit={handleSave} className="space-y-6">
-          {/* ─── LLM Providers Table ─── */}
-          <div className="rounded-lg border border-zinc-900 overflow-hidden">
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-zinc-900 bg-zinc-950">
-              <Key className="w-4 h-4 text-zinc-400" />
-              <h3 className="text-sm font-semibold text-white">Cấu hình AI (LLM Providers)</h3>
-              <span className="ml-auto text-[10px] text-zinc-500 font-medium">
-                Chọn provider đang dùng → nhập API Key → lưu
-              </span>
-            </div>
-
-            {/* Table header */}
-            <div className="grid grid-cols-[1.6fr_2.4fr_1.8fr_auto] gap-0 text-[10px] font-bold text-zinc-600 uppercase tracking-wider px-5 py-2 border-b border-zinc-900/60 bg-zinc-950/50">
-              <span>Provider</span>
-              <span>API Key</span>
-              <span>Model Name</span>
-              <span className="text-right pr-1">Active</span>
-            </div>
-
-            {/* Provider rows */}
-            <div className="divide-y divide-zinc-900/60 bg-zinc-950">
-              {LLM_PROVIDERS.map((p) => {
-                const state = providerState[p.id] ?? { apiKey: '', model: p.defaultModel };
-                const isConfigured = state.apiKey.trim().length > 0;
-                const isActive = activeProvider === p.id;
-
-                return (
-                  <div
-                    key={p.id}
-                    className={`grid grid-cols-[1.6fr_2.4fr_1.8fr_auto] gap-3 items-center px-5 py-3.5 transition-colors ${
-                      isActive ? 'bg-zinc-900/40' : 'hover:bg-zinc-900/20'
-                    }`}
-                  >
-                    {/* Provider name */}
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className={`w-7 h-7 rounded-md ${p.bg} border ${p.border} flex items-center justify-center flex-shrink-0`}>
-                        <Zap className={`w-3.5 h-3.5 ${p.color}`} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-zinc-200 truncate">{p.name}</p>
-                        <p className="text-[10px] text-zinc-600 truncate">{p.description}</p>
-                      </div>
-                    </div>
-
-                    {/* API Key input */}
-                    <div className="space-y-1">
-                      <ApiKeyInput
-                        value={state.apiKey}
-                        onChange={(v) => updateProviderField(p.id, 'apiKey', v)}
-                        placeholder={p.keyPlaceholder}
-                      />
-                      <div className="flex items-center gap-1.5">
-                        {isConfigured ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
-                            <CheckCircle2 className="w-3 h-3" /> Đã cấu hình
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-zinc-600 font-medium">
-                            <Circle className="w-3 h-3" /> Chưa nhập key
-                          </span>
-                        )}
-                        <span className="text-[10px] text-zinc-700 hidden sm:inline">· {p.keyHint}</span>
-                      </div>
-                    </div>
-
-                    {/* Model input */}
-                    <div>
-                      <input
-                        type="text"
-                        value={state.model}
-                        onChange={(e) => updateProviderField(p.id, 'model', e.target.value)}
-                        placeholder={p.defaultModel}
-                        className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600 font-mono placeholder-zinc-600"
-                      />
-                    </div>
-
-                    {/* Active radio */}
-                    <div className="flex justify-end pr-1">
-                      <button
-                        type="button"
-                        onClick={() => setActiveProvider(p.id)}
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${
-                          isActive
-                            ? 'border-zinc-200 bg-zinc-200'
-                            : 'border-zinc-700 hover:border-zinc-500'
-                        }`}
-                        title={`Dùng ${p.name}`}
-                      >
-                        {isActive && <div className="w-2 h-2 rounded-full bg-zinc-950" />}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Active provider summary */}
-            <div className="px-5 py-3 border-t border-zinc-900 bg-zinc-950/50 flex items-center gap-2">
-              <span className="text-[11px] text-zinc-500">Provider đang dùng:</span>
-              <span className="text-[11px] font-bold text-zinc-200">
-                {LLM_PROVIDERS.find((p) => p.id === activeProvider)?.name ?? activeProvider}
-              </span>
-              {providerState[activeProvider]?.apiKey ? (
-                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
-                  <CheckCircle2 className="w-3 h-3" /> Key đã nhập
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-semibold">
-                  ⚠ Chưa nhập API key cho provider này
-                </span>
-              )}
-            </div>
+          {/* ─── Tabs ─── */}
+          <div className="flex gap-1 border-b border-zinc-900">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold transition-all border-b-2 -mb-px ${
+                    isActive
+                      ? 'border-zinc-200 text-zinc-200'
+                      : 'border-transparent text-zinc-600 hover:text-zinc-400 hover:border-zinc-700'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
-          {/* ─── Video Defaults ─── */}
-          <div className="rounded-lg border border-zinc-900 overflow-hidden">
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-zinc-900 bg-zinc-950">
-              <Sliders className="w-4 h-4 text-zinc-400" />
-              <h3 className="text-sm font-semibold text-white">Thiết lập Video Mặc định</h3>
-            </div>
-            <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4 bg-zinc-950">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
-                  Giọng đọc (TTS)
-                </label>
-                <select
-                  value={voice}
-                  onChange={(e) => setVoice(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600"
-                >
+          {/* ─── Tab: LLM ─── */}
+          {activeTab === 'llm' && (
+            <SectionCard icon={Key} title="AI Providers (LLM)" description="Chọn provider đang dùng → nhập API Key → lưu">
+              <div className="grid grid-cols-[1.6fr_2.4fr_1.8fr_auto] gap-0 text-[10px] font-bold text-zinc-600 uppercase tracking-wider px-5 py-2 border-b border-zinc-900/60 bg-zinc-950/50">
+                <span>Provider</span><span>API Key</span><span>Model Name</span><span className="text-right pr-1">Active</span>
+              </div>
+              <div className="divide-y divide-zinc-900/60 bg-zinc-950">
+                {LLM_PROVIDERS.map((p) => {
+                  const state = providerState[p.id] ?? { apiKey: '', model: p.defaultModel };
+                  const isConfigured = state.apiKey.trim().length > 0;
+                  const isActive = activeProvider === p.id;
+                  return (
+                    <div key={p.id} className={`grid grid-cols-[1.6fr_2.4fr_1.8fr_auto] gap-3 items-center px-5 py-3.5 transition-colors ${isActive ? 'bg-zinc-900/40' : 'hover:bg-zinc-900/20'}`}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-7 h-7 rounded-md ${p.bg} border ${p.border} flex items-center justify-center flex-shrink-0`}>
+                          <Zap className={`w-3.5 h-3.5 ${p.color}`} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-zinc-200 truncate">{p.name}</p>
+                          <p className="text-[10px] text-zinc-600 truncate">{p.description}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <ApiKeyInput value={state.apiKey} onChange={(v) => setProviderState((prev) => ({ ...prev, [p.id]: { ...prev[p.id], apiKey: v } }))} placeholder={p.keyPlaceholder} />
+                        <div className="flex items-center gap-1.5">
+                          {isConfigured ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium"><CheckCircle2 className="w-3 h-3" /> Đã cấu hình</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-zinc-600 font-medium"><Circle className="w-3 h-3" /> Chưa nhập key</span>
+                          )}
+                          <span className="text-[10px] text-zinc-700 hidden sm:inline">· {p.keyHint}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <TextInput value={state.model} onChange={(v) => setProviderState((prev) => ({ ...prev, [p.id]: { ...prev[p.id], model: v } }))} placeholder={p.defaultModel} />
+                      </div>
+                      <div className="flex justify-end pr-1">
+                        <button type="button" onClick={() => setActiveProvider(p.id)}
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${isActive ? 'border-zinc-200 bg-zinc-200' : 'border-zinc-700 hover:border-zinc-500'}`}>
+                          {isActive && <div className="w-2 h-2 rounded-full bg-zinc-950" />}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="px-5 py-3 border-t border-zinc-900 bg-zinc-950/50 flex items-center gap-2">
+                <span className="text-[11px] text-zinc-500">Provider đang dùng:</span>
+                <span className="text-[11px] font-bold text-zinc-200">{LLM_PROVIDERS.find((p) => p.id === activeProvider)?.name ?? activeProvider}</span>
+                {providerState[activeProvider]?.apiKey ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-semibold"><CheckCircle2 className="w-3 h-3" /> Key đã nhập</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-semibold">⚠ Chưa nhập API key cho provider này</span>
+                )}
+              </div>
+            </SectionCard>
+          )}
+
+          {/* ─── Tab: Media Sources ─── */}
+          {activeTab === 'media' && (
+            <SectionCard icon={Image} title="Media Sources" description="API keys cho nguồn tư liệu hình ảnh, video">
+              <FieldRow label="Pexels API Keys" hint="Dùng nhiều key cách nhau bằng dấu phẩy">
+                <ApiKeyInput value={pexelsApiKeys} onChange={setPexelsApiKeys} placeholder="123adsf4567adf89, abd1321cd13..." />
+              </FieldRow>
+              <FieldRow label="Pixabay API Keys" hint="Dùng nhiều key cách nhau bằng dấu phẩy">
+                <ApiKeyInput value={pixabayApiKeys} onChange={setPixabayApiKeys} placeholder="123adsf4567adf89, abd1321cd13..." />
+              </FieldRow>
+              <FieldRow label="Coverr API Keys" hint="Dùng nhiều key cách nhau bằng dấu phẩy">
+                <ApiKeyInput value={coverrApiKeys} onChange={setCoverrApiKeys} placeholder="123adsf4567adf89, abd1321cd13..." />
+              </FieldRow>
+              <FieldRow label="TwelveLabs API Keys" hint="Dùng nhiều key cách nhau bằng dấu phẩy">
+                <ApiKeyInput value={twelvelabsApiKeys} onChange={setTwelvelabsApiKeys} placeholder="tlk_123adsf4567, tlk_abd1321..." />
+              </FieldRow>
+              <FieldRow label="TwelveLabs Re-rank" hint="Sắp xếp lại từ khóa tìm kiếm theo mức độ liên quan">
+                <Select value={twelvelabsRerank} onChange={setTwelvelabsRerank} options={[{ value: 'false', label: 'Tắt' }, { value: 'true', label: 'Bật' }]} />
+              </FieldRow>
+            </SectionCard>
+          )}
+
+          {/* ─── Tab: TTS & Voice ─── */}
+          {activeTab === 'tts' && (
+            <SectionCard icon={Mic} title="Text-to-Speech & Voice" description="Cấu hình giọng đọc và các provider TTS">
+              <FieldRow label="Giọng đọc mặc định" hint="Edge TTS (miễn phí)">
+                <select value={voice} onChange={(e) => setVoice(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
                   <option value="vi-VN-HoaiMyNeural">Hoài My (Nữ - Tiếng Việt)</option>
                   <option value="vi-VN-NamMinhNeural">Nam Minh (Nam - Tiếng Việt)</option>
                   <option value="en-US-JennyNeural">Jenny (Female - English)</option>
                   <option value="en-US-GuyNeural">Guy (Male - English)</option>
                 </select>
-              </div>
+              </FieldRow>
 
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
-                  Tỷ lệ khung hình
-                </label>
-                <select
-                  value={ratio}
-                  onChange={(e) => setRatio(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600"
-                >
+              <div className="px-5 py-2 bg-zinc-900/30 border-b border-zinc-900/60">
+                <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Azure Speech (TTS V2 - trả phí)</p>
+              </div>
+              <FieldRow label="Speech Key" hint="Azure Speech Services API Key">
+                <ApiKeyInput value={speechKey} onChange={setSpeechKey} placeholder="your-azure-speech-key" />
+              </FieldRow>
+              <FieldRow label="Speech Region" hint="VD: eastus, southeastasia">
+                <TextInput value={speechRegion} onChange={setSpeechRegion} placeholder="eastus" />
+              </FieldRow>
+
+              <div className="px-5 py-2 bg-zinc-900/30 border-b border-zinc-900/60">
+                <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">ElevenLabs</p>
+              </div>
+              <FieldRow label="API Key" hint="elevenlabs.io">
+                <ApiKeyInput value={elevenlabsApiKey} onChange={setElevenlabsApiKey} placeholder="ElevenLabs API Key" />
+              </FieldRow>
+              <FieldRow label="Model ID" hint="VD: eleven_multilingual_v2, eleven_flash_v2_5">
+                <TextInput value={elevenlabsModelId} onChange={setElevenlabsModelId} placeholder="eleven_multilingual_v2" />
+              </FieldRow>
+
+              <div className="px-5 py-2 bg-zinc-900/30 border-b border-zinc-900/60">
+                <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">SiliconFlow</p>
+              </div>
+              <FieldRow label="API Key" hint="siliconflow.cn">
+                <ApiKeyInput value={siliconflowApiKey} onChange={setSiliconflowApiKey} placeholder="SiliconFlow API Key" />
+              </FieldRow>
+
+              <div className="px-5 py-2 bg-zinc-900/30 border-b border-zinc-900/60">
+                <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Chatterbox (TTS tự host)</p>
+              </div>
+              <FieldRow label="Base URL" hint="OpenAI-compatible endpoint">
+                <TextInput value={chatterboxBaseUrl} onChange={setChatterboxBaseUrl} placeholder="http://127.0.0.1:4123/v1" />
+              </FieldRow>
+            </SectionCard>
+          )}
+
+          {/* ─── Tab: Video Defaults ─── */}
+          {activeTab === 'video' && (
+            <SectionCard icon={Video} title="Video Defaults" description="Tham số mặc định khi tạo video">
+              <FieldRow label="Tỷ lệ khung hình">
+                <select value={ratio} onChange={(e) => setRatio(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
                   <option value="9:16">9:16 — Dọc (TikTok / Shorts)</option>
                   <option value="16:9">16:9 — Ngang (YouTube)</option>
                 </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
-                  Nguồn tư liệu hình ảnh
-                </label>
-                <select
-                  value={source}
-                  onChange={(e) => setSource(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600"
-                >
+              </FieldRow>
+              <FieldRow label="Nguồn tư liệu">
+                <select value={source} onChange={(e) => setSource(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
                   <option value="pexels">Pexels API</option>
                   <option value="pixabay">Pixabay API</option>
                   <option value="local">Local (Thư mục cục bộ)</option>
                 </select>
+              </FieldRow>
+              <FieldRow label="Subtitle Provider" hint="Công cụ tạo phụ đề">
+                <select value={subtitleProvider} onChange={(e) => setSubtitleProvider(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
+                  <option value="edge">Edge TTS (nhanh, không cần GPU)</option>
+                  <option value="whisper">Whisper (chính xác hơn, cần GPU)</option>
+                  <option value="">Không tạo phụ đề</option>
+                </select>
+              </FieldRow>
+              <FieldRow label="Edge TTS Timeout (s)" hint="Thời gian chờ tối đa cho mỗi request">
+                <TextInput value={edgeTtsTimeout} onChange={setEdgeTtsTimeout} placeholder="30" />
+              </FieldRow>
+            </SectionCard>
+          )}
+
+          {/* ─── Tab: Advanced ─── */}
+          {activeTab === 'advanced' && (
+            <SectionCard icon={Cpu} title="Advanced" description="Cấu hình nâng cao">
+              <div className="px-5 py-2 bg-zinc-900/30 border-b border-zinc-900/60">
+                <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Network & Security</p>
               </div>
-            </div>
-          </div>
+              <FieldRow label="TLS Verify" hint="Kiểm tra chứng chỉ TLS khi gọi API & tải素材">
+                <select value={tlsVerify} onChange={(e) => setTlsVerify(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
+                  <option value="true">Bật (mặc định)</option>
+                  <option value="false">Tắt (chỉ khi dùng proxy doanh nghiệp)</option>
+                </select>
+              </FieldRow>
+              <FieldRow label="Enable Redis" hint="Dùng Redis để quản lý trạng thái task">
+                <select value={enableRedis} onChange={(e) => setEnableRedis(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
+                  <option value="false">Tắt</option>
+                  <option value="true">Bật</option>
+                </select>
+              </FieldRow>
+
+              <div className="px-5 py-2 bg-zinc-900/30 border-b border-zinc-900/60">
+                <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Whisper (Subtitle)</p>
+              </div>
+              <FieldRow label="Model Size" hint="Dung lượng model Whisper">
+                <select value={whisperModelSize} onChange={(e) => setWhisperModelSize(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
+                  <option value="large-v3">large-v3 (~3GB)</option>
+                  <option value="large-v3-turbo">large-v3-turbo (~250MB)</option>
+                  <option value="medium">medium</option>
+                  <option value="small">small</option>
+                  <option value="base">base</option>
+                  <option value="tiny">tiny</option>
+                </select>
+              </FieldRow>
+              <FieldRow label="Device" hint="CPU hoặc CUDA">
+                <select value={whisperDevice} onChange={(e) => setWhisperDevice(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
+                  <option value="CPU">CPU</option>
+                  <option value="cuda">CUDA (GPU)</option>
+                </select>
+              </FieldRow>
+              <FieldRow label="Compute Type" hint="Độ chính xác tính toán">
+                <select value={whisperComputeType} onChange={(e) => setWhisperComputeType(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-100 text-xs focus:outline-none focus:border-zinc-600">
+                  <option value="int8">int8 (mặc định)</option>
+                  <option value="float16">float16</option>
+                  <option value="float32">float32</option>
+                </select>
+              </FieldRow>
+            </SectionCard>
+          )}
 
           {/* ─── Storage Info ─── */}
-          <div className="rounded-lg border border-zinc-900 overflow-hidden">
-            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-zinc-900 bg-zinc-950">
-              <Database className="w-4 h-4 text-zinc-400" />
-              <h3 className="text-sm font-semibold text-white">Lưu trữ Object Storage (MinIO)</h3>
-            </div>
-            <div className="p-5 bg-zinc-950">
+          <SectionCard icon={Database} title="Lưu trữ Object Storage (MinIO)" description="Tích hợp tự động qua Docker Compose">
+            <div className="p-5">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
                   { label: 'Endpoint', value: 'minio:9000' },
@@ -460,17 +522,15 @@ export default function SystemSettings() {
                   { label: 'Username', value: 'minioadmin' },
                   { label: 'Console', value: 'localhost:9001' },
                 ].map((item) => (
-                  <div key={item.label} className="p-3 rounded-md bg-zinc-900 border border-zinc-850">
+                  <div key={item.label} className="p-3 rounded-md bg-zinc-900 border border-zinc-800">
                     <p className="text-[10px] text-zinc-600 font-semibold uppercase tracking-wider">{item.label}</p>
                     <p className="text-xs text-zinc-300 font-mono mt-1">{item.value}</p>
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-zinc-600 mt-3">
-                MinIO được tích hợp tự động qua Docker Compose. Không cần cấu hình thêm.
-              </p>
+              <p className="text-[11px] text-zinc-600 mt-3">MinIO được tích hợp tự động qua Docker Compose. Không cần cấu hình thêm.</p>
             </div>
-          </div>
+          </SectionCard>
 
           {/* ─── Save Button ─── */}
           <div className="flex items-center gap-4">
@@ -479,24 +539,14 @@ export default function SystemSettings() {
               disabled={saveMutation.isPending}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-950 font-semibold text-sm shadow-sm transition-all disabled:opacity-50"
             >
-              {saveMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
+              {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Lưu cấu hình
             </button>
-
-            {savedOk && (
-              <span className="inline-flex items-center gap-1.5 text-sm text-emerald-400 font-semibold">
-                <CheckCircle2 className="w-4 h-4" />
-                Đã lưu thành công!
-              </span>
-            )}
+            {savedOk && <span className="inline-flex items-center gap-1.5 text-sm text-emerald-400 font-semibold"><CheckCircle2 className="w-4 h-4" /> Đã lưu thành công!</span>}
             {saveMutation.isError && (
-              <span className="text-sm text-rose-400 font-semibold">
-                Lưu thất bại. Vui lòng thử lại.
-              </span>
+              <div className="text-sm text-rose-400 font-semibold">
+                Lưu thất bại: {saveError}
+              </div>
             )}
           </div>
         </form>

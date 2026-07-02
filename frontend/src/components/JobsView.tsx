@@ -134,28 +134,29 @@ function JobsInner({ selectedJobId }: { selectedJobId?: string | null }) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const terminalEndRef = useRef<HTMLDivElement>(null);
+  const hasAutoNav = useRef(false);
 
   const navigateToJob = (id: string | null) => {
     router.push(id ? `/jobs/${id}` : '/jobs', { scroll: false });
   };
 
-  const { data: jobs = [], isLoading } = useQuery<any[]>({
+  const { data: jobs = [], isLoading, isError } = useQuery<any[]>({
     queryKey: ['jobs'],
     queryFn: () => api.get('/jobs').then((res) => res.data),
     refetchInterval: (query) => {
       const list = query.state.data as any[];
-      if (!list) return 3000;
+      if (!list || list.length === 0) return false;
       return list.some((j) => ACTIVE_STATUSES.includes(j.status)) ? 3000 : false;
     },
   });
 
-  const { data: selectedJob } = useQuery<any>({
+  const { data: selectedJob, isError: isErrorSelectedJob } = useQuery<any>({
     queryKey: ['job', selectedJobId],
     queryFn: () => api.get(`/jobs/${selectedJobId}`).then((res) => res.data),
     enabled: !!selectedJobId,
     refetchInterval: (query) => {
       const job = query.state.data as any;
-      if (!job) return 3000;
+      if (!job) return false;
       return ACTIVE_STATUSES.includes(job.status) ? 2000 : false;
     },
   });
@@ -166,18 +167,26 @@ function JobsInner({ selectedJobId }: { selectedJobId?: string | null }) {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       queryClient.invalidateQueries({ queryKey: ['job', selectedJobId] });
     },
+    onError: (err: any) => {
+      console.error('Cancel failed:', err?.response?.data?.message || err?.message);
+    },
   });
 
   const retryMutation = useMutation({
     mutationFn: (id: string) => api.post(`/jobs/${id}/retry`).then((res) => res.data),
     onSuccess: (newJob) => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      navigateToJob(newJob.id);
+      navigateToJob(newJob?.id ?? null);
+    },
+    onError: (err: any) => {
+      console.error('Retry failed:', err?.response?.data?.message || err?.message);
     },
   });
 
   useEffect(() => {
+    if (hasAutoNav.current) return;
     if (!selectedJobId && jobs.length > 0) {
+      hasAutoNav.current = true;
       const active = jobs.find((j) => ACTIVE_STATUSES.includes(j.status));
       navigateToJob(active?.id ?? jobs[0].id);
     }
@@ -201,7 +210,11 @@ function JobsInner({ selectedJobId }: { selectedJobId?: string | null }) {
         </div>
 
         <div className="flex-1 overflow-y-auto divide-y divide-zinc-900/60">
-          {isLoading ? (
+          {isError ? (
+            <div className="text-center py-16 text-rose-500 text-xs px-4 border border-dashed border-rose-900/50 rounded-md mx-2 mt-2">
+              Không thể tải danh sách job.
+            </div>
+          ) : isLoading ? (
             <div className="flex justify-center py-10">
               <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
             </div>
@@ -262,7 +275,12 @@ function JobsInner({ selectedJobId }: { selectedJobId?: string | null }) {
       </div>
 
       <div className="flex-1 rounded-lg border border-zinc-900 bg-zinc-950 flex flex-col min-w-0 overflow-hidden">
-        {selectedJob ? (
+        {isErrorSelectedJob ? (
+          <div className="flex-1 flex flex-col justify-center items-center text-center p-8 text-rose-500 space-y-3">
+            <AlertCircle className="w-10 h-10 text-rose-800" />
+            <p className="text-sm">Không thể tải thông tin job.</p>
+          </div>
+        ) : selectedJob ? (
           <>
             <div className="px-5 py-3.5 border-b border-zinc-900 flex items-center gap-4">
               <div className="flex-1 min-w-0">
@@ -321,7 +339,7 @@ function JobsInner({ selectedJobId }: { selectedJobId?: string | null }) {
                     <span className="text-zinc-500 font-semibold">Tiến độ tổng</span>
                     <span className="font-bold text-zinc-200 tabular-nums">{selectedJob.progress ?? 0}%</span>
                   </div>
-                  <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden border border-zinc-850">
+                  <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden border border-zinc-800">
                     <div
                       className={`h-full rounded-full transition-all duration-700 ${
                         selectedJob.status === 'completed'

@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  NotFoundException,
 } from '@nestjs/common';
 import { IdeasService } from './ideas.service';
 
@@ -34,9 +35,21 @@ export class IdeasController {
     dto: {
       topic: string;
       language: string;
+      existingTitles?: string[];
     },
   ) {
     return this.ideasService.brainstorm(dto);
+  }
+
+  @Post('batch-generate-video')
+  batchGenerateVideo(
+    @Body()
+    dto: {
+      topic: string;
+      config: any;
+    },
+  ) {
+    return this.ideasService.batchGenerateVideo(dto.topic, dto.config);
   }
 
   @Get()
@@ -79,6 +92,9 @@ export class IdeasController {
   @Post(':id/generate-script')
   async generateScript(@Param('id') id: string) {
     const script = await this.ideasService.generateScript(id);
+    if (!script) {
+      throw new NotFoundException('Không thể tạo kịch bản: ý tưởng đã có kịch bản hoặc đang trong quá trình tạo');
+    }
     return { script };
   }
 

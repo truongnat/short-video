@@ -1,9 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import {
   Lightbulb,
@@ -16,9 +16,21 @@ import {
   AlertCircle,
   Loader2,
   Sparkles,
+  RefreshCw,
+  XCircle,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface Job {
+  id: string;
+  status: string;
+  progress: number;
+  createdAt: string;
+  updatedAt: string;
+  errorMessage?: string;
+  videos?: any[];
+}
 
 interface Idea {
   id: string;
@@ -31,6 +43,7 @@ interface Idea {
   updated_at?: string;
   topic?: string;
   tags?: string[];
+  jobs?: Job[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -157,6 +170,8 @@ function IdeaDetailSkeleton() {
 export default function IdeaDetailPage() {
   const params = useParams();
   const id = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : '';
+  const queryClient = useQueryClient();
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
 
   const {
     data: idea,
@@ -169,6 +184,36 @@ export default function IdeaDetailPage() {
     enabled: !!id,
     retry: 1,
   });
+
+  const retryMutation = useMutation({
+    mutationFn: (jobId: string) =>
+      api.post(`/jobs/${jobId}/retry`).then((res) => res.data),
+    onMutate: (jobId) => setPendingJobId(jobId),
+    onSettled: () => setPendingJobId(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ideas', id] });
+    },
+    onError: (err: any) => {
+      console.error('Retry failed:', err?.response?.data?.message || err?.message);
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (jobId: string) => api.post(`/jobs/${jobId}/cancel`),
+    onMutate: (jobId) => setPendingJobId(jobId),
+    onSettled: () => setPendingJobId(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ideas', id] });
+    },
+    onError: (err: any) => {
+      console.error('Cancel failed:', err?.response?.data?.message || err?.message);
+    },
+  });
+
+  const ACTIVE_STATUSES = [
+    'queued', 'running', 'generating_script', 'fetching_materials',
+    'generating_voice', 'generating_subtitle', 'rendering', 'uploading',
+  ];
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-200">
@@ -288,7 +333,7 @@ export default function IdeaDetailPage() {
                     <span className="w-2.5 h-2.5 rounded-full bg-zinc-700" />
                     <span className="ml-3 text-zinc-500 text-xs font-mono">script.txt</span>
                   </div>
-                  <pre className="overflow-y-auto max-h-[28rem] p-5 text-sm text-zinc-300 font-mono leading-relaxed whitespace-pre-wrap break-words scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+                  <pre className="overflow-y-auto max-h-[28rem] p-5 text-sm text-zinc-300 font-mono leading-relaxed whitespace-pre-wrap break-words">
                     {idea.script}
                   </pre>
                 </div>
@@ -328,6 +373,75 @@ export default function IdeaDetailPage() {
                 />
               )}
             </section>
+
+            {/* Jobs */}
+            {idea.jobs && idea.jobs.length > 0 && (
+              <>
+                <div className="border-t border-zinc-900" />
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Loader2 size={14} className="text-zinc-500" />
+                    <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">
+                      Jobs tạo video ({idea.jobs.length})
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {idea.jobs.map((job) => (
+                      <div
+                        key={job.id}
+                        className="rounded-xl border border-zinc-900 bg-zinc-900/30 px-4 py-3 flex items-center gap-3"
+                      >
+                        <StatusBadge status={job.status} />
+                        <Link
+                          href={`/jobs/${job.id}`}
+                          className="text-xs text-zinc-600 font-mono hover:text-zinc-400 transition-colors"
+                        >
+                          {job.id.slice(0, 8)}…
+                        </Link>
+                        {job.errorMessage && (
+                          <span className="text-xs text-red-400 truncate max-w-[200px] hidden sm:inline">
+                            {job.errorMessage}
+                          </span>
+                        )}
+                        <span className="text-xs text-zinc-500 ml-auto hidden sm:block">
+                          {formatDate(job.createdAt)}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {(job.status === 'failed' || job.status === 'cancelled') && (
+                            <button
+                              disabled={pendingJobId === job.id}
+                              onClick={() => retryMutation.mutate(job.id)}
+                              className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-40"
+                              title="Thử lại"
+                            >
+                              {pendingJobId === job.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+                          {ACTIVE_STATUSES.includes(job.status) && (
+                            <button
+                              disabled={pendingJobId === job.id}
+                              onClick={() => cancelMutation.mutate(job.id)}
+                              className="p-1.5 rounded-md text-zinc-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors disabled:opacity-40"
+                              title="Hủy"
+                            >
+                              {pendingJobId === job.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <XCircle className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </>
+            )}
 
           </article>
         )}

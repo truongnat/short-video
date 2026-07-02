@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { execSync } from 'child_process';
+import { PrismaService } from './modules/database/prisma.service';
 
 async function runDatabasePush() {
   const logger = new Logger('DatabaseInit');
@@ -27,6 +28,33 @@ async function runDatabasePush() {
   }
 }
 
+async function recoverStuckJobs(prisma: PrismaService) {
+  const logger = new Logger('JobRecovery');
+  try {
+    const stuckJobs = await prisma.generationJob.findMany({
+      where: { status: { in: ['running', 'queued'] } },
+    });
+    if (stuckJobs.length === 0) {
+      logger.log('No stuck jobs found.');
+      return;
+    }
+    logger.warn(`Found ${stuckJobs.length} stuck jobs from before restart. Failing them...`);
+    for (const job of stuckJobs) {
+      await prisma.generationJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'failed',
+          errorMessage: 'Server restarted while job was in progress. Please retry.',
+          finishedAt: new Date(),
+        },
+      });
+    }
+    logger.log(`Recovered ${stuckJobs.length} stuck jobs.`);
+  } catch (error: any) {
+    logger.error('Failed to recover stuck jobs:', error);
+  }
+}
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   
@@ -37,7 +65,7 @@ async function bootstrap() {
   
   // Enable CORS
   app.enableCors({
-    origin: '*',
+    origin: process.env.CORS_ORIGIN || 'http://localhost:23000',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
@@ -58,5 +86,9 @@ async function bootstrap() {
 
   await app.listen(port);
   logger.log(`NestJS application is running on: http://localhost:${port}/api`);
+
+  // Recover stuck jobs from before restart
+  const prisma = app.get(PrismaService);
+  await recoverStuckJobs(prisma);
 }
 bootstrap();

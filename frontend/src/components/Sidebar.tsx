@@ -19,16 +19,24 @@ export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('sidebar-collapsed');
-    if (saved) {
-      setIsCollapsed(saved === 'true');
+    try {
+      const saved = localStorage.getItem('sidebar-collapsed');
+      if (saved) {
+        setIsCollapsed(saved === 'true');
+      }
+    } catch {
+      // localStorage not available
     }
   }, []);
 
   const toggleCollapse = () => {
     setIsCollapsed((prev) => {
       const next = !prev;
-      localStorage.setItem('sidebar-collapsed', String(next));
+      try {
+        localStorage.setItem('sidebar-collapsed', String(next));
+      } catch {
+        // localStorage not available
+      }
       return next;
     });
   };
@@ -53,7 +61,7 @@ export default function Sidebar() {
           isCollapsed ? 'justify-center' : 'gap-3 px-6'
         }`}
       >
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-650 to-indigo-650 flex items-center justify-center shadow-lg shadow-violet-500/10 relative group flex-shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/10 relative group flex-shrink-0">
           <div className="absolute inset-0 rounded-lg bg-violet-600 blur-sm opacity-50 group-hover:opacity-75 transition-opacity" />
           <Terminal className="w-5 h-5 text-white relative z-10" aria-hidden="true" />
         </div>
@@ -62,7 +70,7 @@ export default function Sidebar() {
             <h1 className="font-bold text-sm bg-clip-text text-transparent bg-gradient-to-r from-violet-400 via-fuchsia-400 to-indigo-400 leading-none tracking-tight truncate">
               Turbo Video
             </h1>
-            <span className="text-[9px] text-zinc-550 font-semibold tracking-wider uppercase">
+            <span className="text-[9px] text-zinc-500 font-semibold tracking-wider uppercase">
               Engine SaaS v1.0
             </span>
           </div>
@@ -78,7 +86,7 @@ export default function Sidebar() {
               key={item.href}
               href={item.href}
               title={isCollapsed ? item.name : undefined}
-              className={`flex items-center rounded-md transition-all duration-205 group relative ${
+              className={`flex items-center rounded-md transition-all duration-200 group relative ${
                 isCollapsed
                   ? 'justify-center w-10 h-10 mx-auto'
                   : 'gap-3 px-4 py-2.5'
@@ -107,7 +115,7 @@ export default function Sidebar() {
       <div className={`p-3 border-t border-zinc-900 ${isCollapsed ? 'px-2' : 'px-4'}`}>
         <button
           onClick={toggleCollapse}
-          className={`flex items-center text-zinc-500 hover:text-zinc-350 hover:bg-zinc-900/40 rounded-md transition-all w-full py-2 ${
+          className={`flex items-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/40 rounded-md transition-all w-full py-2 ${
             isCollapsed ? 'justify-center' : 'px-4 gap-3'
           }`}
           title={isCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}

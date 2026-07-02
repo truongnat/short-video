@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
+import { cancelledJobs } from './video.processor';
 
 @Injectable()
 export class QueueService {
@@ -25,7 +26,7 @@ export class QueueService {
         config,
       },
       {
-        jobId, // Set BullMQ job ID same as our database job ID to make cancel/status lookup easy
+        jobId,
         attempts: 1,
         removeOnComplete: true,
         removeOnFail: false,
@@ -40,6 +41,7 @@ export class QueueService {
   }
 
   async cancelJob(jobId: string) {
+    cancelledJobs.add(jobId);
     const job = await this.videoQueue.getJob(jobId);
     if (job) {
       await job.remove();

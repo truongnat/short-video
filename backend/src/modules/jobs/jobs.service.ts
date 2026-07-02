@@ -84,6 +84,12 @@ export class JobsService {
   async retry(id: string) {
     const originalJob = await this.findOne(id);
 
+    if (this.ACTIVE_STATUSES.includes(originalJob.status)) {
+      throw new BadRequestException(
+        'Không thể thử lại job đang chờ hoặc đang chạy',
+      );
+    }
+
     // Create a new job based on the original job config
     const newJob = await this.prisma.generationJob.create({
       data: {

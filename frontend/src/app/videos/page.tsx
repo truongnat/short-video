@@ -26,7 +26,7 @@ export default function Videos() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const { data: videos = [], isLoading } = useQuery<any[]>({
+  const { data: videos = [], isLoading, isError } = useQuery<any[]>({
     queryKey: ['videos'],
     queryFn: () => api.get('/videos').then((res) => res.data),
   });
@@ -52,7 +52,11 @@ export default function Videos() {
   });
 
   const handleCopyLink = (videoUrl: string, id: string) => {
-    navigator.clipboard.writeText(videoUrl);
+    try {
+      navigator.clipboard.writeText(videoUrl);
+    } catch {
+      // Clipboard not available
+    }
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -67,7 +71,11 @@ export default function Videos() {
         <p className="text-xs text-zinc-500 mt-1">{videos.length} video đã tổng hợp thành công</p>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <div className="flex justify-center items-center py-20">
+          <p className="text-sm text-rose-400">Không thể tải danh sách video. Vui lòng thử lại sau.</p>
+        </div>
+      ) : isLoading ? (
         <div className="flex justify-center items-center py-20">
           <Loader2 className="w-7 h-7 text-zinc-600 animate-spin" />
         </div>
@@ -156,8 +164,6 @@ export default function Videos() {
                     <a
                       href={videoSrc}
                       download={`video-${video.id}.mp4`}
-                      target="_blank"
-                      rel="noreferrer"
                       className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-700 transition-all flex items-center justify-center"
                       title="Tải xuống"
                     >

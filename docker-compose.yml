@@ -79,7 +79,7 @@ services:
     depends_on:
       - backend
     environment:
-      NEXT_PUBLIC_API_URL: "http://localhost:23001"
+      API_UPSTREAM: "http://backend:23001"
       MEDIA_PROXY_ALLOWED_HOSTS: "minio,localhost,127.0.0.1"
     volumes:
       - ./frontend:/app

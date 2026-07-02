@@ -18,6 +18,7 @@ import {
   AlertCircle,
   FileText,
 } from 'lucide-react';
+import { backendVideoStreamUrl, backendVideoThumbnailUrl } from '@/lib/backend-media';
 
 const ACTIVE_STATUSES = [
   'queued',
@@ -45,15 +46,14 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function Dashboard() {
-  const { data: ideas = [], isLoading: isLoadingIdeas } = useQuery<any[]>({
+  const { data: ideas = [], isLoading: isLoadingIdeas, isError: isErrorIdeas } = useQuery<any[]>({
     queryKey: ['ideas'],
     queryFn: () => api.get('/ideas').then((res) => res.data),
   });
 
-  const { data: jobs = [], isLoading: isLoadingJobs } = useQuery<any[]>({
+  const { data: jobs = [], isLoading: isLoadingJobs, isError: isErrorJobs } = useQuery<any[]>({
     queryKey: ['jobs'],
     queryFn: () => api.get('/jobs').then((res) => res.data),
-    // Poll every 3s if any job is still active
     refetchInterval: (query) => {
       const list = query.state.data as any[];
       if (!list) return false;
@@ -61,7 +61,7 @@ export default function Dashboard() {
     },
   });
 
-  const { data: videos = [], isLoading: isLoadingVideos } = useQuery<any[]>({
+  const { data: videos = [], isLoading: isLoadingVideos, isError: isErrorVideos } = useQuery<any[]>({
     queryKey: ['videos'],
     queryFn: () => api.get('/videos').then((res) => res.data),
   });
@@ -95,7 +95,7 @@ export default function Dashboard() {
     {
       name: 'Video đã tạo',
       value: isLoadingVideos ? null : videos.length,
-      sub: isLoadingVideos ? null : `${completedJobs.length} job hoàn thành`,
+      sub: isLoadingVideos ? null : `${videos.length} video`,
       icon: Video,
       iconBg: 'bg-emerald-500/10',
       iconColor: 'text-emerald-400',
@@ -191,7 +191,11 @@ export default function Dashboard() {
           </div>
 
           <div className="p-4 space-y-3">
-            {isLoadingJobs ? (
+            {isErrorJobs ? (
+              <div className="text-center py-10 text-rose-500 text-sm border border-dashed border-rose-900/50 rounded-md">
+                Không thể tải danh sách job.
+              </div>
+            ) : isLoadingJobs ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 text-zinc-700 animate-spin" />
               </div>
@@ -215,7 +219,7 @@ export default function Dashboard() {
                       <span>Tiến độ</span>
                       <span className="tabular-nums font-bold">{job.progress ?? 0}%</span>
                     </div>
-                    <div className="w-full bg-zinc-900 h-1.5 rounded-full overflow-hidden border border-zinc-850">
+                    <div className="w-full bg-zinc-900 h-1.5 rounded-full overflow-hidden border border-zinc-800">
                       <div
                         className="bg-blue-500 h-full rounded-full transition-all duration-500"
                         style={{ width: `${job.progress ?? 0}%` }}
@@ -244,7 +248,11 @@ export default function Dashboard() {
           </div>
 
           <div className="divide-y divide-zinc-900">
-            {isLoadingJobs ? (
+            {isErrorJobs ? (
+              <div className="text-center py-10 text-rose-500 text-sm border border-dashed border-rose-900/50 rounded-md m-4">
+                Không thể tải lịch sử job.
+              </div>
+            ) : isLoadingJobs ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 text-zinc-700 animate-spin" />
               </div>
@@ -283,7 +291,7 @@ export default function Dashboard() {
                             ? 'bg-rose-950/40 text-rose-400 border-rose-900/50'
                             : isActive
                             ? 'bg-blue-950/40 text-blue-400 border-blue-900/50'
-                            : 'bg-zinc-900 text-zinc-400 border-zinc-850'
+                            : 'bg-zinc-900 text-zinc-400 border-zinc-800'
                         }`}
                       >
                         {isActive ? `${job.progress ?? 0}%` : STATUS_LABELS[job.status] || job.status}
@@ -315,9 +323,9 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-zinc-900">
             {videos.slice(0, 3).map((video) => (
               <div key={video.id} className="bg-zinc-950 p-4 flex items-center gap-3 hover:bg-zinc-900/30 transition-colors">
-                <div className="w-10 h-14 rounded-md bg-zinc-900 border border-zinc-850 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <div className="w-10 h-14 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {video.thumbnailUrl ? (
-                    <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" />
+                    <img src={backendVideoThumbnailUrl(video.thumbnailUrl)} alt={video.title} className="w-full h-full object-cover" />
                   ) : (
                     <Video className="w-4 h-4 text-zinc-600" />
                   )}
@@ -330,10 +338,10 @@ export default function Dashboard() {
                 </div>
                 {video.videoUrl && (
                   <a
-                    href={video.videoUrl}
+                    href={backendVideoStreamUrl(video.videoUrl)}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-[11px] font-semibold px-3 py-1.5 rounded-md bg-zinc-900 border border-zinc-850 hover:border-zinc-750 text-zinc-300 hover:text-white transition-all flex-shrink-0"
+                    className="text-[11px] font-semibold px-3 py-1.5 rounded-md bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white transition-all flex-shrink-0"
                   >
                     Xem
                   </a>

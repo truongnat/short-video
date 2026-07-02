@@ -41,7 +41,8 @@ streamlit.log
 ./backend/node_modules
 ./backend/dist
 ./frontend/node_modules
-./engine/storage/
+./engine/storage
 ./engine/dist
 ./engine/storage/cache_videos
 ./engine/tasks
+engine/storage/
