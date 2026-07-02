@@ -2,13 +2,28 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../storage/storage.service';
-import { spawn, ChildProcess } from 'child_process';
+import type { Buffer } from 'node:buffer';
+import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Logger } from '@nestjs/common';
 import ffmpeg from 'fluent-ffmpeg';
+import { type VideoJobPayload } from './queue.service';
 
 export const cancelledJobs = new Set<string>();
+
+type ScriptFile = {
+  script?: string;
+};
+
+type JobProgressUpdate = {
+  progress: number;
+  status?: string;
+};
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 @Processor('video-generation', { concurrency: 1 })
 export class VideoProcessor extends WorkerHost {
@@ -21,7 +36,7 @@ export class VideoProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<any, any, string>): Promise<any> {
+  async process(job: Job<VideoJobPayload, unknown, string>): Promise<unknown> {
     const { jobId, ideaId, subject, script, language, config } = job.data;
     this.logger.log(`Processing video generation job: ${jobId}`);
 
@@ -99,8 +114,8 @@ export class VideoProcessor extends WorkerHost {
     );
 
     return new Promise((resolve, reject) => {
-      let pyProcess: ChildProcess;
-      let logQueue = Promise.resolve();
+      let pyProcess: ChildProcessWithoutNullStreams | null = null;
+      let logQueue: Promise<void> = Promise.resolve();
       let settled = false;
 
       const cleanup = () => {
@@ -115,14 +130,20 @@ export class VideoProcessor extends WorkerHost {
       const markFailed = async (errMsg: string) => {
         cleanup();
         this.logger.error(`Job ${jobId} failed: ${errMsg}`);
-        await this.prisma.generationJob.update({
-          where: { id: jobId },
-          data: {
-            status: 'failed',
-            errorMessage: errMsg,
-            finishedAt: new Date(),
-          },
-        }).catch((err) => this.logger.error('Failed to mark job as failed:', err));
+        await this.prisma.generationJob
+          .update({
+            where: { id: jobId },
+            data: {
+              status: 'failed',
+              errorMessage: errMsg,
+              finishedAt: new Date(),
+            },
+          })
+          .catch((err: unknown) =>
+            this.logger.error(
+              `Failed to mark job as failed: ${getErrorMessage(err)}`,
+            ),
+          );
       };
 
       const logAndSave = async (
@@ -194,7 +215,7 @@ export class VideoProcessor extends WorkerHost {
           }
 
           if (progress !== -1) {
-            const updateData: Record<string, any> = { progress };
+            const updateData: JobProgressUpdate = { progress };
             if (status) {
               updateData.status = status;
             }
@@ -203,7 +224,7 @@ export class VideoProcessor extends WorkerHost {
                 where: { id: jobId },
                 data: updateData,
               })
-              .catch(() => {});
+              .catch(() => undefined);
           }
         }
       };
@@ -219,7 +240,7 @@ export class VideoProcessor extends WorkerHost {
       );
 
       if (pyProcess.stdout) {
-        pyProcess.stdout.on('data', (data) => {
+        pyProcess.stdout.on('data', (data: Buffer) => {
           logQueue = logQueue.then(() => logAndSave(data.toString(), 'stdout'));
         });
         pyProcess.stdout.on('error', (err) => {
@@ -228,7 +249,7 @@ export class VideoProcessor extends WorkerHost {
       }
 
       if (pyProcess.stderr) {
-        pyProcess.stderr.on('data', (data) => {
+        pyProcess.stderr.on('data', (data: Buffer) => {
           logQueue = logQueue.then(() => logAndSave(data.toString(), 'stderr'));
         });
         pyProcess.stderr.on('error', (err) => {
@@ -240,45 +261,168 @@ export class VideoProcessor extends WorkerHost {
         if (settled) return;
         settled = true;
         this.logger.error(`Failed to spawn process: ${err.message}`);
-        markFailed(`Process spawn failed: ${err.message}`);
+        void markFailed(`Process spawn failed: ${err.message}`);
         reject(err);
       });
 
-      pyProcess.on('close', async (code) => {
+      pyProcess.on('close', (code) => {
         if (settled) return;
         settled = true;
-        // Wait for all pending log writes
-        await logQueue;
+        void (async () => {
+          // Wait for all pending log writes
+          await logQueue;
 
-        // Check if cancelled during processing
-        if (cancelledJobs.has(jobId)) {
-          cancelledJobs.delete(jobId);
-          reject(new Error('Job was cancelled'));
-          return;
-        }
+          // Check if cancelled during processing
+          if (cancelledJobs.has(jobId)) {
+            cancelledJobs.delete(jobId);
+            reject(new Error('Job was cancelled'));
+            return;
+          }
 
-        this.logger.log(`Engine CLI completed with code: ${code}`);
+          this.logger.log(`Engine CLI completed with code: ${code}`);
 
-        if (code !== 0) {
-          const errMsg = `CLI execution failed with exit code ${code}`;
-          await this.prisma.generationJob.update({
-            where: { id: jobId },
-            data: {
-              status: 'failed',
-              errorMessage: errMsg,
-              finishedAt: new Date(),
-            },
-          });
-          return reject(new Error(errMsg));
-        }
+          if (code !== 0) {
+            const errMsg = `CLI execution failed with exit code ${code}`;
+            await this.prisma.generationJob.update({
+              where: { id: jobId },
+              data: {
+                status: 'failed',
+                errorMessage: errMsg,
+                finishedAt: new Date(),
+              },
+            });
+            reject(new Error(errMsg));
+            return;
+          }
 
-        try {
-          // Check if video already exists (idempotency for worker retries)
-          const existing = await this.prisma.video.findFirst({
-            where: { jobId },
-          });
-          if (existing) {
-            this.logger.log(`Video record already exists for job ${jobId}, skipping creation`);
+          try {
+            // Check if video already exists (idempotency for worker retries)
+            const existing = await this.prisma.video.findFirst({
+              where: { jobId },
+            });
+            if (existing) {
+              this.logger.log(
+                `Video record already exists for job ${jobId}, skipping creation`,
+              );
+              await this.prisma.generationJob.update({
+                where: { id: jobId },
+                data: {
+                  status: 'completed',
+                  progress: 100,
+                  finishedAt: new Date(),
+                },
+              });
+              resolve(existing);
+              return;
+            }
+
+            // Process success
+            await this.prisma.generationJob.update({
+              where: { id: jobId },
+              data: { status: 'uploading', progress: 90 },
+            });
+
+            const finalVideoPath = path.join(taskStorageDir, 'final-1.mp4');
+            const subtitlePath = path.join(taskStorageDir, 'subtitle.srt');
+            const scriptJsonPath = path.join(taskStorageDir, 'script.json');
+
+            if (!fs.existsSync(finalVideoPath)) {
+              throw new Error(
+                `Output video file final-1.mp4 not found at ${finalVideoPath}`,
+              );
+            }
+
+            const thumbnailFilename = 'thumbnail.jpg';
+            const thumbnailPath = path.join(taskStorageDir, thumbnailFilename);
+            await new Promise<void>((res, rej) => {
+              const timeout = setTimeout(() => {
+                rej(
+                  new Error('ffmpeg thumbnail generation timed out after 60s'),
+                );
+              }, 60000);
+              ffmpeg(finalVideoPath)
+                .screenshots({
+                  count: 1,
+                  timemarks: ['0'],
+                  filename: thumbnailFilename,
+                  folder: taskStorageDir,
+                })
+                .on('end', () => {
+                  clearTimeout(timeout);
+                  res();
+                })
+                .on('error', (err: Error) => {
+                  clearTimeout(timeout);
+                  rej(err);
+                });
+            });
+
+            const s3VideoKey = `videos/${jobId}/final.mp4`;
+            const s3ThumbnailKey = `videos/${jobId}/thumbnail.jpg`;
+            const s3SubtitleKey = `videos/${jobId}/subtitle.srt`;
+            const s3ScriptKey = `videos/${jobId}/script.json`;
+
+            await this.storage.uploadFile(
+              finalVideoPath,
+              s3VideoKey,
+              'video/mp4',
+            );
+            if (fs.existsSync(thumbnailPath)) {
+              await this.storage.uploadFile(
+                thumbnailPath,
+                s3ThumbnailKey,
+                'image/jpeg',
+              );
+            }
+            if (fs.existsSync(subtitlePath)) {
+              await this.storage.uploadFile(
+                subtitlePath,
+                s3SubtitleKey,
+                'text/plain',
+              );
+            }
+            if (fs.existsSync(scriptJsonPath)) {
+              await this.storage.uploadFile(
+                scriptJsonPath,
+                s3ScriptKey,
+                'application/json',
+              );
+            }
+
+            let scriptContent = script;
+            if (fs.existsSync(scriptJsonPath)) {
+              try {
+                const scriptData = JSON.parse(
+                  fs.readFileSync(scriptJsonPath, 'utf8'),
+                ) as ScriptFile;
+                scriptContent = scriptData.script || script;
+              } catch (error: unknown) {
+                this.logger.error(
+                  `Failed to parse script.json: ${getErrorMessage(error)}`,
+                );
+              }
+            }
+
+            const video = await this.prisma.video.create({
+              data: {
+                ideaId,
+                jobId,
+                title: subject,
+                script: scriptContent,
+                videoObjectKey: s3VideoKey,
+                thumbnailObjectKey: fs.existsSync(thumbnailPath)
+                  ? s3ThumbnailKey
+                  : null,
+                subtitleObjectKey: fs.existsSync(subtitlePath)
+                  ? s3SubtitleKey
+                  : null,
+                metadataObjectKey: fs.existsSync(scriptJsonPath)
+                  ? s3ScriptKey
+                  : null,
+                ratio: config.aspect_ratio || '9:16',
+              },
+            });
+
             await this.prisma.generationJob.update({
               where: { id: jobId },
               data: {
@@ -287,146 +431,27 @@ export class VideoProcessor extends WorkerHost {
                 finishedAt: new Date(),
               },
             });
-            resolve(existing);
-            return;
-          }
 
-          // Process success
-          await this.prisma.generationJob.update({
-            where: { id: jobId },
-            data: { status: 'uploading', progress: 90 },
-          });
-
-          // Check if output files exist
-          const finalVideoPath = path.join(taskStorageDir, 'final-1.mp4');
-          const subtitlePath = path.join(taskStorageDir, 'subtitle.srt');
-          const scriptJsonPath = path.join(taskStorageDir, 'script.json');
-
-          if (!fs.existsSync(finalVideoPath)) {
-            throw new Error(
-              `Output video file final-1.mp4 not found at ${finalVideoPath}`,
-            );
-          }
-
-          // Generate thumbnail
-          const thumbnailFilename = 'thumbnail.jpg';
-          const thumbnailPath = path.join(taskStorageDir, thumbnailFilename);
-          await new Promise<void>((res, rej) => {
-            const timeout = setTimeout(() => {
-              rej(new Error('ffmpeg thumbnail generation timed out after 60s'));
-            }, 60000);
-            ffmpeg(finalVideoPath)
-              .screenshots({
-                count: 1,
-                timemarks: ['0'],
-                filename: thumbnailFilename,
-                folder: taskStorageDir,
-              })
-              .on('end', () => {
-                clearTimeout(timeout);
-                res();
-              })
-              .on('error', (err: any) => {
-                clearTimeout(timeout);
-                rej(err);
-              });
-          });
-
-          // Upload files to MinIO
-          const s3VideoKey = `videos/${jobId}/final.mp4`;
-          const s3ThumbnailKey = `videos/${jobId}/thumbnail.jpg`;
-          const s3SubtitleKey = `videos/${jobId}/subtitle.srt`;
-          const s3ScriptKey = `videos/${jobId}/script.json`;
-
-          await this.storage.uploadFile(
-            finalVideoPath,
-            s3VideoKey,
-            'video/mp4',
-          );
-          if (fs.existsSync(thumbnailPath)) {
-            await this.storage.uploadFile(
-              thumbnailPath,
-              s3ThumbnailKey,
-              'image/jpeg',
-            );
-          }
-          if (fs.existsSync(subtitlePath)) {
-            await this.storage.uploadFile(
-              subtitlePath,
-              s3SubtitleKey,
-              'text/plain',
-            );
-          }
-          if (fs.existsSync(scriptJsonPath)) {
-            await this.storage.uploadFile(
-              scriptJsonPath,
-              s3ScriptKey,
-              'application/json',
-            );
-          }
-
-          // Parse script data
-          let scriptContent = script;
-          if (fs.existsSync(scriptJsonPath)) {
-            try {
-              const scriptData = JSON.parse(
-                fs.readFileSync(scriptJsonPath, 'utf8'),
-              );
-              scriptContent = scriptData.script || script;
-            } catch (e) {
-              this.logger.error('Failed to parse script.json:', e);
+            if (fs.existsSync(taskStorageDir)) {
+              fs.rmSync(taskStorageDir, { recursive: true, force: true });
             }
+
+            resolve(video);
+          } catch (error: unknown) {
+            this.logger.error(
+              `Post-processing failed: ${getErrorMessage(error)}`,
+            );
+            await this.prisma.generationJob.update({
+              where: { id: jobId },
+              data: {
+                status: 'failed',
+                errorMessage: getErrorMessage(error),
+                finishedAt: new Date(),
+              },
+            });
+            reject(error instanceof Error ? error : new Error(String(error)));
           }
-
-          // Create Video record in database
-          const video = await this.prisma.video.create({
-            data: {
-              ideaId,
-              jobId,
-              title: subject,
-              script: scriptContent,
-              videoObjectKey: s3VideoKey,
-              thumbnailObjectKey: fs.existsSync(thumbnailPath)
-                ? s3ThumbnailKey
-                : null,
-              subtitleObjectKey: fs.existsSync(subtitlePath)
-                ? s3SubtitleKey
-                : null,
-              metadataObjectKey: fs.existsSync(scriptJsonPath)
-                ? s3ScriptKey
-                : null,
-              ratio: config.aspect_ratio || '9:16',
-            },
-          });
-
-          // Update job to completed
-          await this.prisma.generationJob.update({
-            where: { id: jobId },
-            data: {
-              status: 'completed',
-              progress: 100,
-              finishedAt: new Date(),
-            },
-          });
-
-          // Clean up taskStorageDir
-          if (fs.existsSync(taskStorageDir)) {
-            fs.rmSync(taskStorageDir, { recursive: true, force: true });
-          }
-
-          resolve(video);
-        } catch (err: any) {
-          this.logger.error('Post-processing failed:', err);
-          await this.prisma.generationJob.update({
-            where: { id: jobId },
-            data: {
-              status: 'failed',
-              errorMessage: err.message || 'Post-processing failed',
-              finishedAt: new Date(),
-            },
-          });
-          reject(err);
-        }
+        })();
       });
     });
   }

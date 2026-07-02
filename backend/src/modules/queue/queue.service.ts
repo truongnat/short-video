@@ -3,9 +3,35 @@ import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { cancelledJobs } from './video.processor';
 
+export type VideoJobConfig = {
+  voice_name?: string;
+  aspect_ratio?: string;
+  video_source?: string;
+  video_concat_mode?: string;
+  bgm_type?: string;
+  bgm_file?: string;
+  bgm_volume?: number;
+  font_name?: string;
+  font_size?: number;
+  stroke_color?: string;
+  stroke_width?: number;
+};
+
+export type VideoJobPayload = {
+  jobId: string;
+  ideaId: string;
+  subject: string;
+  script?: string;
+  language: string;
+  config: VideoJobConfig;
+};
+
 @Injectable()
 export class QueueService {
-  constructor(@InjectQueue('video-generation') private videoQueue: Queue) {}
+  constructor(
+    @InjectQueue('video-generation')
+    private videoQueue: Queue<VideoJobPayload>,
+  ) {}
 
   async addVideoJob(
     jobId: string,
@@ -13,7 +39,7 @@ export class QueueService {
     subject: string,
     script: string | undefined,
     language: string,
-    config: any,
+    config: VideoJobConfig,
   ) {
     return this.videoQueue.add(
       'generate-video',

@@ -1,5 +1,49 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+
+type IdeaGenerationOptions = {
+  existingTitles?: string[];
+  anchorTitle?: string;
+  anchorDescription?: string;
+};
+
+export type ActiveLlmProviderConfig = {
+  provider: string;
+  apiKey: string;
+  model: string;
+};
+
+export type GeneratedIdea = {
+  title: string;
+  description: string;
+};
+
+type GeminiResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+};
+
+type OpenAICompatibleResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+};
+
+function isGeneratedIdea(value: unknown): value is GeneratedIdea {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as GeneratedIdea).title === 'string' &&
+    typeof (value as GeneratedIdea).description === 'string'
+  );
+}
 
 @Injectable()
 export class LlmService {
@@ -14,10 +58,13 @@ export class LlmService {
     return setting ? setting.value : defaultValue;
   }
 
-  async generateIdeas(topic: string, language = 'vi'): Promise<any[]> {
-    const provider = await this.getSetting('llm_provider', 'gemini');
+  async getActiveProviderConfig(): Promise<ActiveLlmProviderConfig> {
+    const provider = await this.getSetting('llm_provider', 'groq');
     const apiKeyMap: Record<string, string> = {
-      gemini: (await this.getSetting('gemini_api_key', '')) || process.env.GEMINI_API_KEY || '',
+      gemini:
+        (await this.getSetting('gemini_api_key', '')) ||
+        process.env.GEMINI_API_KEY ||
+        '',
       groq: await this.getSetting('groq_api_key', ''),
       openai: await this.getSetting('openai_api_key', ''),
       deepseek: await this.getSetting('deepseek_api_key', ''),
@@ -27,48 +74,83 @@ export class LlmService {
       grok: await this.getSetting('grok_api_key', ''),
       volcengine: await this.getSetting('volcengine_api_key', ''),
     };
-    let apiKey = apiKeyMap[provider] || (await this.getSetting('llm_api_key', ''));
+    const apiKey =
+      apiKeyMap[provider] || (await this.getSetting('llm_api_key', ''));
 
-    const modelKey = provider === 'gemini' ? 'gemini_model_name'
-      : provider === 'groq' ? 'groq_model_name'
-      : provider === 'openai' ? 'openai_model_name'
-      : provider === 'deepseek' ? 'deepseek_model_name'
-      : provider === 'moonshot' ? 'moonshot_model_name'
-      : provider === 'qwen' ? 'qwen_model_name'
-      : provider === 'azure' ? 'azure_model_name'
-      : provider === 'grok' ? 'grok_model_name'
-      : provider === 'volcengine' ? 'volcengine_model_name'
-      : null;
-    const model = modelKey
-      ? await this.getSetting(modelKey, '')
-      : await this.getSetting('llm_model', 'gemini-2.5-flash');
+    const modelKey =
+      provider === 'gemini'
+        ? 'gemini_model_name'
+        : provider === 'groq'
+          ? 'groq_model_name'
+          : provider === 'openai'
+            ? 'openai_model_name'
+            : provider === 'deepseek'
+              ? 'deepseek_model_name'
+              : provider === 'moonshot'
+                ? 'moonshot_model_name'
+                : provider === 'qwen'
+                  ? 'qwen_model_name'
+                  : provider === 'azure'
+                    ? 'azure_model_name'
+                    : provider === 'grok'
+                      ? 'grok_model_name'
+                      : provider === 'volcengine'
+                        ? 'volcengine_model_name'
+                        : null;
+
+    return {
+      provider,
+      apiKey,
+      model: modelKey
+        ? await this.getSetting(modelKey, '')
+        : await this.getSetting('llm_model', 'gemini-2.5-flash'),
+    };
+  }
+
+  async generateIdeas(
+    topic: string,
+    language = 'vi',
+    options: IdeaGenerationOptions = {},
+  ): Promise<GeneratedIdea[]> {
+    const { provider, apiKey, model } = await this.getActiveProviderConfig();
 
     if (!apiKey) {
-      this.logger.warn('LLM API Key is missing. Returning sample ideas.');
-      return [
-        {
-          title: `Ý tưởng 1 về ${topic}`,
-          description: `Mô tả ý tưởng 1 về chủ đề ${topic}.`,
-        },
-        {
-          title: `Ý tưởng 2 về ${topic}`,
-          description: `Mô tả ý tưởng 2 về chủ đề ${topic}.`,
-        },
-        {
-          title: `Ý tưởng 3 về ${topic}`,
-          description: `Mô tả ý tưởng 3 về chủ đề ${topic}.`,
-        },
-      ];
+      this.logger.warn(
+        `LLM API key is missing for provider "${provider}". Rejecting idea generation request.`,
+      );
+      throw new BadRequestException(
+        'Chưa cấu hình API key cho AI provider hiện tại. Vào Cài đặt để bật tính năng gợi ý ý tưởng.',
+      );
     }
+
+    const existingTitles = options.existingTitles
+      ?.map((title) => title.trim())
+      .filter(Boolean);
+    const duplicateGuard =
+      existingTitles && existingTitles.length > 0
+        ? `Không được trùng hoặc gần trùng với các tiêu đề đã có sau đây: ${existingTitles
+            .map((title) => `"${title}"`)
+            .join(', ')}.`
+        : '';
+    const relatedContext = options.anchorTitle
+      ? `Ngữ cảnh hiện tại: người dùng đang xem ý tưởng "${options.anchorTitle}"${
+          options.anchorDescription
+            ? ` với ghi chú "${options.anchorDescription}".`
+            : '.'
+        } Hãy đề xuất những góc khai thác mới cùng chủ đề, đủ khác biệt để người dùng có thể chọn tiếp, không viết lại cùng một ý tưởng bằng từ ngữ khác.`
+      : '';
 
     const prompt = `Bạn là chuyên gia sáng tạo nội dung video ngắn (TikTok, Reels, Shorts).
 Dựa vào chủ đề: "${topic}", hãy gợi ý 5 ý tưởng video ngắn thu hút người xem.
+${relatedContext}
+${duplicateGuard}
 Yêu cầu trả về kết quả dưới dạng JSON Array thuần túy, KHÔNG có markdown, KHÔNG có thẻ \`\`\`json. Mỗi phần tử có cấu trúc:
 {
   "title": "Tiêu đề video ngắn gọn, tò mò",
   "description": "Mô tả ngắn gọn nội dung và kịch bản hình ảnh"
 }
-Ngôn ngữ trả về: ${language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}.`;
+Ngôn ngữ trả về: ${language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}.
+Tiêu đề phải cụ thể, dễ hiểu, không dùng placeholder, không đánh số thứ tự, không lặp lại cấu trúc câu y hệt nhau.`;
 
     try {
       let resultText = '';
@@ -81,7 +163,8 @@ Ngôn ngữ trả về: ${language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}.
           moonshot: 'https://api.moonshot.cn/v1/chat/completions',
           qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
           grok: 'https://api.x.ai/v1/chat/completions',
-          volcengine: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+          volcengine:
+            'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
         };
         return urls[provider] || '';
       };
@@ -110,9 +193,11 @@ Ngôn ngữ trả về: ${language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}.
           }),
         });
         if (!response.ok) {
-          throw new Error(`Gemini API returned ${response.status}: ${await response.text()}`);
+          throw new Error(
+            `Gemini API returned ${response.status}: ${await response.text()}`,
+          );
         }
-        const data = await response.json();
+        const data = (await response.json()) as GeminiResponse;
         resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       } else if (provider === 'azure') {
         const baseUrl = await this.getSetting('azure_base_url', '');
@@ -129,9 +214,11 @@ Ngôn ngữ trả về: ${language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}.
           }),
         });
         if (!response.ok) {
-          throw new Error(`Azure OpenAI API returned ${response.status}: ${await response.text()}`);
+          throw new Error(
+            `Azure OpenAI API returned ${response.status}: ${await response.text()}`,
+          );
         }
-        const data = await response.json();
+        const data = (await response.json()) as OpenAICompatibleResponse;
         resultText = data.choices?.[0]?.message?.content || '';
       } else {
         const url = openAIBaseUrl();
@@ -151,9 +238,11 @@ Ngôn ngữ trả về: ${language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}.
           }),
         });
         if (!response.ok) {
-          throw new Error(`${provider} API returned ${response.status}: ${await response.text()}`);
+          throw new Error(
+            `${provider} API returned ${response.status}: ${await response.text()}`,
+          );
         }
-        const data = await response.json();
+        const data = (await response.json()) as OpenAICompatibleResponse;
         resultText = data.choices?.[0]?.message?.content || '';
       }
 
@@ -167,18 +256,20 @@ Ngôn ngữ trả về: ${language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}.
         .replace(/```/g, '')
         .trim();
 
-      const parsed = JSON.parse(resultText);
+      const parsed: unknown = JSON.parse(resultText);
       if (!Array.isArray(parsed)) {
         throw new Error('LLM response is not a valid array');
       }
       for (const item of parsed) {
-        if (!item.title || !item.description) {
+        if (!isGeneratedIdea(item)) {
           throw new Error('LLM response items missing title or description');
         }
       }
-      return parsed;
-    } catch (error) {
-      this.logger.error('Failed to generate ideas using LLM:', error);
+      return parsed as GeneratedIdea[];
+    } catch (error: unknown) {
+      this.logger.error(
+        `Failed to generate ideas using LLM: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw new Error(
         'Không thể tạo ý tưởng bằng AI. Vui lòng kiểm tra lại API Key và cấu hình LLM.',
       );

@@ -40,13 +40,16 @@ interface Video {
   script?: string;
   ratio: string;
   createdAt: string;
-  videoUrl: string;
-  thumbnailUrl?: string;
-  subtitleUrl?: string;
   videoObjectKey?: string;
+  thumbnailObjectKey?: string | null;
+  subtitleObjectKey?: string | null;
   idea?: VideoIdea;
   job?: VideoJob;
 }
+
+type RegeneratedJob = {
+  id?: string;
+};
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -55,7 +58,7 @@ async function fetchVideo(id: string): Promise<Video> {
   return data;
 }
 
-async function regenerateVideo(id: string): Promise<any> {
+async function regenerateVideo(id: string): Promise<RegeneratedJob> {
   const { data } = await api.post(`/videos/${id}/regenerate`);
   return data;
 }
@@ -125,7 +128,7 @@ function JobStatusBadge({ status }: { status: string }) {
     running: "border-blue-800 bg-blue-950 text-blue-400",
   };
   const cls =
-    variants[(status || '').toLowerCase()] ??
+    variants[(status || "").toLowerCase()] ??
     "border-zinc-700 bg-zinc-800 text-zinc-400";
 
   return (
@@ -166,7 +169,7 @@ export default function VideoDetailPage() {
       if (newJob?.id) {
         router.push(`/jobs/${newJob.id}`);
       } else {
-        router.push('/jobs');
+        router.push("/jobs");
       }
     },
   });
@@ -193,15 +196,18 @@ export default function VideoDetailPage() {
 
   const proxiedVideoUrl = video ? backendVideoStreamUrl(video.id) : undefined;
   const proxiedThumbnailUrl =
-    video?.thumbnailUrl && video ? backendVideoThumbnailUrl(video.id) : undefined;
+    video?.thumbnailObjectKey && video
+      ? backendVideoThumbnailUrl(video.id)
+      : undefined;
   const proxiedSubtitleUrl =
-    video?.subtitleUrl && video ? backendVideoSubtitleUrl(video.id) : undefined;
+    video?.subtitleObjectKey && video
+      ? backendVideoSubtitleUrl(video.id)
+      : undefined;
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-
         {/* ── Breadcrumb ── */}
         <nav
           aria-label="Breadcrumb"
@@ -235,7 +241,6 @@ export default function VideoDetailPage() {
         {/* ── Content ── */}
         {video && (
           <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
-
             {/* ── LEFT: Video player ── */}
             <div className="flex-1">
               <div
@@ -273,7 +278,6 @@ export default function VideoDetailPage() {
 
             {/* ── RIGHT: Metadata panel ── */}
             <aside className="flex w-full flex-col gap-5 lg:w-80 xl:w-96">
-
               {/* Title */}
               <div>
                 <h1 className="text-xl font-semibold leading-snug text-zinc-100">
@@ -292,7 +296,7 @@ export default function VideoDetailPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-zinc-500">Ngày tạo</span>
                   <span className="font-medium text-zinc-300">
-                    {new Date(video.createdAt).toLocaleString('vi-VN')}
+                    {new Date(video.createdAt).toLocaleString("vi-VN")}
                   </span>
                 </div>
 
@@ -321,7 +325,7 @@ export default function VideoDetailPage() {
 
                 {/* Progress (if running) */}
                 {video.job &&
-                  (video.job.status || '').toLowerCase() === "running" && (
+                  (video.job.status || "").toLowerCase() === "running" && (
                     <div className="mt-1">
                       <div className="mb-1 flex justify-between text-xs text-zinc-500">
                         <span>Tiến trình</span>
@@ -351,7 +355,6 @@ export default function VideoDetailPage() {
 
               {/* Action buttons */}
               <div className="flex flex-col gap-2 pt-1 sm:flex-row lg:flex-col xl:flex-row">
-
                 {/* Download */}
                 <a
                   href={proxiedVideoUrl}
@@ -396,11 +399,7 @@ export default function VideoDetailPage() {
                   ) : (
                     <RefreshCw size={15} />
                   )}
-                  {regenerateMutation.isPending ? (
-                    "Đang xử lý…"
-                  ) : (
-                    "Tạo lại"
-                  )}
+                  {regenerateMutation.isPending ? "Đang xử lý…" : "Tạo lại"}
                 </button>
               </div>
 

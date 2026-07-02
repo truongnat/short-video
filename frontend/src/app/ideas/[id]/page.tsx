@@ -1,10 +1,11 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { useParams } from 'next/navigation';
-import Link from 'next/link';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '@/lib/api';
+import React, { useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import api from "@/lib/api";
+import { useToast } from "@/components/Toast";
 import {
   Lightbulb,
   ChevronRight,
@@ -18,7 +19,7 @@ import {
   Sparkles,
   RefreshCw,
   XCircle,
-} from 'lucide-react';
+} from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ interface Job {
   createdAt: string;
   updatedAt: string;
   errorMessage?: string;
-  videos?: any[];
+  videos?: Array<{ id: string }>;
 }
 
 interface Idea {
@@ -39,8 +40,8 @@ interface Idea {
   language?: string;
   status: string;
   script?: string;
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
   topic?: string;
   tags?: string[];
   jobs?: Job[];
@@ -49,63 +50,83 @@ interface Idea {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatDate(dateStr?: string): string {
-  if (!dateStr) return '—';
+  if (!dateStr) return "—";
   try {
-    return new Intl.DateTimeFormat('vi-VN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
+    return new Intl.DateTimeFormat("vi-VN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     }).format(new Date(dateStr));
   } catch {
     return dateStr;
   }
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "object" && error !== null) {
+    const maybeError = error as {
+      response?: { data?: { message?: unknown } };
+      message?: unknown;
+    };
+    if (typeof maybeError.response?.data?.message === "string") {
+      return maybeError.response.data.message;
+    }
+    if (typeof maybeError.message === "string") {
+      return maybeError.message;
+    }
+  }
+
+  return fallback;
+}
+
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
+  const map: Record<
+    string,
+    { label: string; icon: React.ReactNode; cls: string }
+  > = {
     done: {
-      label: 'Hoàn thành',
+      label: "Hoàn thành",
       icon: <CheckCircle2 size={13} />,
-      cls: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/25',
+      cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/25",
     },
     completed: {
-      label: 'Hoàn thành',
+      label: "Hoàn thành",
       icon: <CheckCircle2 size={13} />,
-      cls: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/25',
+      cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/25",
     },
     generating: {
-      label: 'Đang tạo',
+      label: "Đang tạo",
       icon: <Loader2 size={13} className="animate-spin" />,
-      cls: 'text-amber-400 bg-amber-400/10 border-amber-400/25',
+      cls: "text-amber-400 bg-amber-400/10 border-amber-400/25",
     },
     pending: {
-      label: 'Chờ xử lý',
+      label: "Chờ xử lý",
       icon: <Clock size={13} />,
-      cls: 'text-zinc-400 bg-zinc-400/10 border-zinc-400/20',
+      cls: "text-zinc-400 bg-zinc-400/10 border-zinc-400/20",
     },
     draft: {
-      label: 'Nháp',
+      label: "Nháp",
       icon: <FileText size={13} />,
-      cls: 'text-zinc-400 bg-zinc-400/10 border-zinc-400/20',
+      cls: "text-zinc-400 bg-zinc-400/10 border-zinc-400/20",
     },
     error: {
-      label: 'Lỗi',
+      label: "Lỗi",
       icon: <AlertCircle size={13} />,
-      cls: 'text-red-400 bg-red-400/10 border-red-400/25',
+      cls: "text-red-400 bg-red-400/10 border-red-400/25",
     },
     failed: {
-      label: 'Thất bại',
+      label: "Thất bại",
       icon: <AlertCircle size={13} />,
-      cls: 'text-red-400 bg-red-400/10 border-red-400/25',
+      cls: "text-red-400 bg-red-400/10 border-red-400/25",
     },
   };
 
   const cfg = map[status] ?? {
     label: status,
     icon: <Sparkles size={13} />,
-    cls: 'text-zinc-400 bg-zinc-400/10 border-zinc-400/20',
+    cls: "text-zinc-400 bg-zinc-400/10 border-zinc-400/20",
   };
 
   return (
@@ -120,11 +141,9 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── Skeleton ────────────────────────────────────────────────────────────────
 
-function SkeletonBlock({ className = '' }: { className?: string }) {
+function SkeletonBlock({ className = "" }: { className?: string }) {
   return (
-    <div
-      className={`rounded bg-zinc-800/60 animate-pulse ${className}`}
-    />
+    <div className={`rounded bg-zinc-800/60 animate-pulse ${className}`} />
   );
 }
 
@@ -169,9 +188,25 @@ function IdeaDetailSkeleton() {
 
 export default function IdeaDetailPage() {
   const params = useParams();
-  const id = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : '';
+  const id =
+    typeof params?.id === "string"
+      ? params.id
+      : Array.isArray(params?.id)
+        ? params.id[0]
+        : "";
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const ACTIVE_STATUSES = [
+    "queued",
+    "running",
+    "generating_script",
+    "fetching_materials",
+    "generating_voice",
+    "generating_subtitle",
+    "rendering",
+    "uploading",
+  ];
 
   const {
     data: idea,
@@ -179,10 +214,20 @@ export default function IdeaDetailPage() {
     isError,
     error,
   } = useQuery<Idea>({
-    queryKey: ['ideas', id],
+    queryKey: ["ideas", id],
     queryFn: () => api.get(`/ideas/${id}`).then((res) => res.data),
     enabled: !!id,
     retry: 1,
+    refetchInterval: (query) => {
+      const currentIdea = query.state.data;
+      if (!currentIdea) return false;
+      if (currentIdea.status === "generating") return 3000;
+      return currentIdea.jobs?.some((job) =>
+        ACTIVE_STATUSES.includes(job.status),
+      )
+        ? 3000
+        : false;
+    },
   });
 
   const retryMutation = useMutation({
@@ -191,10 +236,11 @@ export default function IdeaDetailPage() {
     onMutate: (jobId) => setPendingJobId(jobId),
     onSettled: () => setPendingJobId(null),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ideas', id] });
+      queryClient.invalidateQueries({ queryKey: ["ideas", id] });
+      toast.success("Đã đưa job vào hàng đợi chạy lại.");
     },
-    onError: (err: any) => {
-      console.error('Retry failed:', err?.response?.data?.message || err?.message);
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, "Không thể chạy lại job"));
     },
   });
 
@@ -203,24 +249,22 @@ export default function IdeaDetailPage() {
     onMutate: (jobId) => setPendingJobId(jobId),
     onSettled: () => setPendingJobId(null),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ideas', id] });
+      queryClient.invalidateQueries({ queryKey: ["ideas", id] });
+      toast.success("Đã gửi yêu cầu hủy job.");
     },
-    onError: (err: any) => {
-      console.error('Cancel failed:', err?.response?.data?.message || err?.message);
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error, "Không thể hủy job"));
     },
   });
-
-  const ACTIVE_STATUSES = [
-    'queued', 'running', 'generating_script', 'fetching_materials',
-    'generating_voice', 'generating_subtitle', 'rendering', 'uploading',
-  ];
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-200">
       <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-
         {/* ── Breadcrumb ── */}
-        <nav className="flex items-center gap-1.5 text-sm mb-8" aria-label="Breadcrumb">
+        <nav
+          className="flex items-center gap-1.5 text-sm mb-8"
+          aria-label="Breadcrumb"
+        >
           <Link
             href="/ideas"
             className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -233,7 +277,7 @@ export default function IdeaDetailPage() {
             {isLoading ? (
               <span className="inline-block w-32 h-3.5 rounded bg-zinc-800 animate-pulse" />
             ) : (
-              idea?.title ?? 'Chi tiết'
+              (idea?.title ?? "Chi tiết")
             )}
           </span>
         </nav>
@@ -248,9 +292,7 @@ export default function IdeaDetailPage() {
             <div>
               <p className="text-red-300 font-medium">Không thể tải ý tưởng</p>
               <p className="text-red-400/70 text-sm mt-1">
-                {(error as any)?.response?.data?.message ??
-                  (error as any)?.message ??
-                  'Đã xảy ra lỗi không xác định'}
+                {getErrorMessage(error, "Đã xảy ra lỗi không xác định")}
               </p>
             </div>
           </div>
@@ -259,7 +301,6 @@ export default function IdeaDetailPage() {
         {/* ── Idea content ── */}
         {idea && !isLoading && (
           <article className="space-y-8">
-
             {/* Header */}
             <header className="space-y-4">
               <div className="flex flex-wrap items-start gap-3">
@@ -274,13 +315,15 @@ export default function IdeaDetailPage() {
                 {idea.language && (
                   <span className="flex items-center gap-1.5">
                     <Globe size={14} className="text-zinc-500" />
-                    <span className="uppercase font-mono text-xs tracking-wider">{idea.language}</span>
+                    <span className="uppercase font-mono text-xs tracking-wider">
+                      {idea.language}
+                    </span>
                   </span>
                 )}
-                {idea.created_at && (
+                {idea.createdAt && (
                   <span className="flex items-center gap-1.5">
                     <Calendar size={14} className="text-zinc-500" />
-                    <span>{formatDate(idea.created_at)}</span>
+                    <span>{formatDate(idea.createdAt)}</span>
                   </span>
                 )}
               </div>
@@ -305,15 +348,21 @@ export default function IdeaDetailPage() {
             {/* Description */}
             {idea.description && (
               <section className="space-y-3">
-                <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">Mô tả</p>
-                <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap">{idea.description}</p>
+                <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">
+                  Mô tả
+                </p>
+                <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                  {idea.description}
+                </p>
               </section>
             )}
 
             {/* Topic */}
             {idea.topic && idea.topic !== idea.description && (
               <section className="space-y-3">
-                <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">Chủ đề</p>
+                <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">
+                  Chủ đề
+                </p>
                 <p className="text-zinc-300 leading-relaxed">{idea.topic}</p>
               </section>
             )}
@@ -323,7 +372,9 @@ export default function IdeaDetailPage() {
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
                   <FileText size={14} className="text-zinc-500" />
-                  <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">Kịch bản</p>
+                  <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">
+                    Kịch bản
+                  </p>
                 </div>
                 <div className="relative rounded-xl border border-zinc-900 bg-zinc-900/50 overflow-hidden">
                   {/* top bar */}
@@ -331,7 +382,9 @@ export default function IdeaDetailPage() {
                     <span className="w-2.5 h-2.5 rounded-full bg-zinc-700" />
                     <span className="w-2.5 h-2.5 rounded-full bg-zinc-700" />
                     <span className="w-2.5 h-2.5 rounded-full bg-zinc-700" />
-                    <span className="ml-3 text-zinc-500 text-xs font-mono">script.txt</span>
+                    <span className="ml-3 text-zinc-500 text-xs font-mono">
+                      script.txt
+                    </span>
                   </div>
                   <pre className="overflow-y-auto max-h-[28rem] p-5 text-sm text-zinc-300 font-mono leading-relaxed whitespace-pre-wrap break-words">
                     {idea.script}
@@ -340,7 +393,9 @@ export default function IdeaDetailPage() {
               </section>
             ) : (
               <section className="space-y-3">
-                <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">Kịch bản</p>
+                <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">
+                  Kịch bản
+                </p>
                 <div className="flex items-center gap-3 rounded-xl border border-zinc-900 bg-zinc-900/40 px-5 py-4 text-zinc-500 text-sm">
                   <FileText size={16} className="shrink-0" />
                   <span>Chưa có kịch bản cho ý tưởng này.</span>
@@ -352,7 +407,10 @@ export default function IdeaDetailPage() {
             <div className="border-t border-zinc-900" />
 
             <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <MetaField label="Trạng thái" value={<StatusBadge status={idea.status} />} />
+              <MetaField
+                label="Trạng thái"
+                value={<StatusBadge status={idea.status} />}
+              />
               <MetaField
                 label="Ngôn ngữ"
                 value={
@@ -365,11 +423,22 @@ export default function IdeaDetailPage() {
                   )
                 }
               />
-              <MetaField label="Ngày tạo" value={<span className="text-zinc-300 text-sm">{formatDate(idea.created_at)}</span>} />
-              {idea.updated_at && (
+              <MetaField
+                label="Ngày tạo"
+                value={
+                  <span className="text-zinc-300 text-sm">
+                    {formatDate(idea.createdAt)}
+                  </span>
+                }
+              />
+              {idea.updatedAt && (
                 <MetaField
                   label="Cập nhật lần cuối"
-                  value={<span className="text-zinc-300 text-sm">{formatDate(idea.updated_at)}</span>}
+                  value={
+                    <span className="text-zinc-300 text-sm">
+                      {formatDate(idea.updatedAt)}
+                    </span>
+                  }
                 />
               )}
             </section>
@@ -406,33 +475,34 @@ export default function IdeaDetailPage() {
                         <span className="text-xs text-zinc-500 ml-auto hidden sm:block">
                           {formatDate(job.createdAt)}
                         </span>
-                        <div className="flex items-center gap-1.5">
-                          {(job.status === 'failed' || job.status === 'cancelled') && (
+                        <div className="flex items-center gap-2">
+                          {(job.status === "failed" ||
+                            job.status === "cancelled") && (
                             <button
                               disabled={pendingJobId === job.id}
                               onClick={() => retryMutation.mutate(job.id)}
-                              className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-40"
-                              title="Thử lại"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-40"
                             >
                               {pendingJobId === job.id ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
                                 <RefreshCw className="w-3.5 h-3.5" />
                               )}
+                              Chạy lại
                             </button>
                           )}
                           {ACTIVE_STATUSES.includes(job.status) && (
                             <button
                               disabled={pendingJobId === job.id}
                               onClick={() => cancelMutation.mutate(job.id)}
-                              className="p-1.5 rounded-md text-zinc-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors disabled:opacity-40"
-                              title="Hủy"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-rose-900/40 bg-rose-950/20 px-2.5 py-1.5 text-[11px] font-semibold text-rose-300 transition-colors hover:bg-rose-950/35 disabled:opacity-40"
                             >
                               {pendingJobId === job.id ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
                                 <XCircle className="w-3.5 h-3.5" />
                               )}
+                              Hủy job
                             </button>
                           )}
                         </div>
@@ -442,7 +512,6 @@ export default function IdeaDetailPage() {
                 </section>
               </>
             )}
-
           </article>
         )}
       </div>
@@ -452,10 +521,18 @@ export default function IdeaDetailPage() {
 
 // ─── Small helper component ───────────────────────────────────────────────────
 
-function MetaField({ label, value }: { label: string; value: React.ReactNode }) {
+function MetaField({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1.5 rounded-xl border border-zinc-900 bg-zinc-900/30 px-4 py-3">
-      <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">{label}</p>
+      <p className="text-zinc-500 text-xs uppercase tracking-wider font-medium">
+        {label}
+      </p>
       <div>{value}</div>
     </div>
   );

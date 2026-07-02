@@ -1,9 +1,16 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
-import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+} from "react";
+import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = "success" | "error" | "info";
 
 interface Toast {
   id: string;
@@ -23,19 +30,22 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
 
   useEffect(() => {
+    const timers = timersRef.current;
     return () => {
-      timersRef.current.forEach((t) => clearTimeout(t));
-      timersRef.current.clear();
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
     };
   }, []);
 
   const showToast = useCallback((message: string, type: ToastType) => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
-    
+
     const timer = setTimeout(() => {
       timersRef.current.delete(id);
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -43,20 +53,28 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     timersRef.current.set(id, timer);
   }, []);
 
-  const toast = React.useMemo(() => ({
-    success: (msg: string) => showToast(msg, 'success'),
-    error: (msg: string) => showToast(msg, 'error'),
-    info: (msg: string) => showToast(msg, 'info'),
-  }), [showToast]);
+  const toast = React.useMemo(
+    () => ({
+      success: (msg: string) => showToast(msg, "success"),
+      error: (msg: string) => showToast(msg, "error"),
+      info: (msg: string) => showToast(msg, "info"),
+    }),
+    [showToast],
+  );
 
   const removeToast = (id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      
+
       {/* Toast container */}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-full max-w-sm pointer-events-none">
         {toasts.map((t) => (
@@ -65,16 +83,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             className="flex items-start gap-3 p-4 rounded-lg bg-zinc-950 border border-zinc-800 shadow-2xl pointer-events-auto animate-in slide-in-from-bottom-5 fade-in duration-300"
             role="alert"
           >
-            {t.type === 'success' && (
+            {t.type === "success" && (
               <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
             )}
-            {t.type === 'error' && (
+            {t.type === "error" && (
               <AlertCircle className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
             )}
-            {t.type === 'info' && (
+            {t.type === "info" && (
               <Info className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
             )}
-            
+
             <div className="flex-1 text-sm font-medium text-zinc-200">
               {t.message}
             </div>
@@ -96,7 +114,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error('useToast must be used within a ToastProvider');
+    throw new Error("useToast must be used within a ToastProvider");
   }
   return context.toast;
 }

@@ -12,6 +12,13 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as fs from 'fs';
 import { Readable } from 'stream';
 
+type S3ErrorLike = {
+  name?: string;
+  $metadata?: {
+    httpStatusCode?: number;
+  };
+};
+
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
@@ -20,17 +27,36 @@ export class StorageService implements OnModuleInit {
   private readonly bucketName: string;
 
   constructor(private configService: ConfigService) {
-    const endpoint = this.configService.get<string>('MINIO_ENDPOINT', 'localhost');
+    const endpoint = this.configService.get<string>(
+      'MINIO_ENDPOINT',
+      'localhost',
+    );
     const port = this.configService.get<number>('MINIO_PORT', 29000);
-    const useSSL = this.configService.get<string>('MINIO_USE_SSL', 'false') === 'true';
-    const publicEndpoint = this.configService.get<string>('MINIO_PUBLIC_ENDPOINT', endpoint);
-    const publicPort = this.configService.get<number>('MINIO_PUBLIC_PORT', port);
+    const useSSL =
+      this.configService.get<string>('MINIO_USE_SSL', 'false') === 'true';
+    const publicEndpoint = this.configService.get<string>(
+      'MINIO_PUBLIC_ENDPOINT',
+      endpoint,
+    );
+    const publicPort = this.configService.get<number>(
+      'MINIO_PUBLIC_PORT',
+      port,
+    );
     const publicUseSSL =
       this.configService.get<string>('MINIO_PUBLIC_USE_SSL', String(useSSL)) ===
       'true';
-    const accessKey = this.configService.get<string>('MINIO_ACCESS_KEY', 'minioadmin');
-    const secretKey = this.configService.get<string>('MINIO_SECRET_KEY', 'minioadmin');
-    this.bucketName = this.configService.get<string>('MINIO_BUCKET_NAME', 'videos');
+    const accessKey = this.configService.get<string>(
+      'MINIO_ACCESS_KEY',
+      'minioadmin',
+    );
+    const secretKey = this.configService.get<string>(
+      'MINIO_SECRET_KEY',
+      'minioadmin',
+    );
+    this.bucketName = this.configService.get<string>(
+      'MINIO_BUCKET_NAME',
+      'videos',
+    );
 
     const credentials = {
       accessKeyId: accessKey,
@@ -58,13 +84,23 @@ export class StorageService implements OnModuleInit {
 
   private async createBucketIfNotExists() {
     try {
-      await this.s3Client.send(new HeadBucketCommand({ Bucket: this.bucketName }));
+      await this.s3Client.send(
+        new HeadBucketCommand({ Bucket: this.bucketName }),
+      );
       this.logger.log(`Bucket "${this.bucketName}" already exists.`);
-    } catch (error: any) {
-      if (error.name === 'NotFound' || error['$metadata']?.httpStatusCode === 404) {
-        this.logger.log(`Bucket "${this.bucketName}" not found. Creating it...`);
+    } catch (error: unknown) {
+      const s3Error = error as S3ErrorLike;
+      if (
+        s3Error.name === 'NotFound' ||
+        s3Error.$metadata?.httpStatusCode === 404
+      ) {
+        this.logger.log(
+          `Bucket "${this.bucketName}" not found. Creating it...`,
+        );
         try {
-          await this.s3Client.send(new CreateBucketCommand({ Bucket: this.bucketName }));
+          await this.s3Client.send(
+            new CreateBucketCommand({ Bucket: this.bucketName }),
+          );
           this.logger.log(`Bucket "${this.bucketName}" created successfully.`);
         } catch (createError) {
           this.logger.error(`Failed to create bucket:`, createError);
@@ -75,7 +111,11 @@ export class StorageService implements OnModuleInit {
     }
   }
 
-  async uploadFile(localPath: string, key: string, contentType: string): Promise<string> {
+  async uploadFile(
+    localPath: string,
+    key: string,
+    contentType: string,
+  ): Promise<string> {
     const fileStream = fs.createReadStream(localPath);
     const streamError = new Promise<never>((_, reject) => {
       fileStream.on('error', (err) => {
@@ -95,7 +135,11 @@ export class StorageService implements OnModuleInit {
     return key;
   }
 
-  async uploadBuffer(buffer: Buffer, key: string, contentType: string): Promise<string> {
+  async uploadBuffer(
+    buffer: Buffer,
+    key: string,
+    contentType: string,
+  ): Promise<string> {
     await this.s3Client.send(
       new PutObjectCommand({
         Bucket: this.bucketName,
@@ -117,15 +161,20 @@ export class StorageService implements OnModuleInit {
     });
   }
 
-  async getFileStream(key: string): Promise<{
+  async getFileStream(
+    key: string,
+    range?: string,
+  ): Promise<{
     stream: Readable;
     contentType?: string;
     contentLength?: number;
+    contentRange?: string;
   }> {
     const response = await this.s3Client.send(
       new GetObjectCommand({
         Bucket: this.bucketName,
         Key: key,
+        Range: range,
       }),
     );
 
@@ -137,6 +186,7 @@ export class StorageService implements OnModuleInit {
       stream: response.Body as Readable,
       contentType: response.ContentType,
       contentLength: response.ContentLength,
+      contentRange: response.ContentRange,
     };
   }
 

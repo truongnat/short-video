@@ -4,10 +4,29 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { QueueService } from '../queue/queue.service';
+import { QueueService, type VideoJobConfig } from '../queue/queue.service';
+
+function toVideoJobConfig(value: unknown): VideoJobConfig {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return value;
+  }
+
+  return {};
+}
 
 @Injectable()
 export class JobsService {
+  private readonly ACTIVE_STATUSES = [
+    'queued',
+    'running',
+    'generating_script',
+    'fetching_materials',
+    'generating_voice',
+    'generating_subtitle',
+    'rendering',
+    'uploading',
+  ];
+
   constructor(
     private prisma: PrismaService,
     private queueService: QueueService,
@@ -49,17 +68,6 @@ export class JobsService {
     });
   }
 
-  private readonly ACTIVE_STATUSES = [
-    'queued',
-    'running',
-    'generating_script',
-    'fetching_materials',
-    'generating_voice',
-    'generating_subtitle',
-    'rendering',
-    'uploading',
-  ];
-
   async cancel(id: string) {
     const job = await this.findOne(id);
     if (!this.ACTIVE_STATUSES.includes(job.status)) {
@@ -83,10 +91,24 @@ export class JobsService {
 
   async retry(id: string) {
     const originalJob = await this.findOne(id);
+    const jobConfig = toVideoJobConfig(originalJob.config);
 
     if (this.ACTIVE_STATUSES.includes(originalJob.status)) {
       throw new BadRequestException(
         'Không thể thử lại job đang chờ hoặc đang chạy',
+      );
+    }
+
+    const activeJob = await this.prisma.generationJob.findFirst({
+      where: {
+        ideaId: originalJob.ideaId,
+        status: { in: this.ACTIVE_STATUSES },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (activeJob) {
+      throw new BadRequestException(
+        'Ý tưởng này đã có job đang chờ hoặc đang chạy',
       );
     }
 
@@ -95,7 +117,7 @@ export class JobsService {
       data: {
         ideaId: originalJob.ideaId,
         status: 'queued',
-        config: originalJob.config || {},
+        config: jobConfig,
       },
     });
 
@@ -106,7 +128,7 @@ export class JobsService {
       originalJob.idea.title,
       originalJob.idea.script || undefined,
       originalJob.idea.language,
-      originalJob.config || {},
+      jobConfig,
     );
 
     return newJob;

@@ -11,66 +11,43 @@ export class VideosService {
     private jobsService: JobsService,
   ) {}
 
+  private async getVideoOrThrow(id: string, include?: Record<string, unknown>) {
+    const video = await this.prisma.video.findUnique({
+      where: { id },
+      include,
+    });
+
+    if (!video) {
+      throw new NotFoundException('Không tìm thấy video');
+    }
+
+    return video;
+  }
+
   async findAll() {
-    const videos = await this.prisma.video.findMany({
-      include: {
+    return this.prisma.video.findMany({
+      select: {
+        id: true,
+        title: true,
+        ratio: true,
+        createdAt: true,
+        thumbnailObjectKey: true,
         idea: { select: { title: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
-
-    // Generate signed URLs for all videos
-    return Promise.all(
-      videos.map(async (v) => {
-        const videoUrl = await this.storage.getDownloadUrl(v.videoObjectKey);
-        const thumbnailUrl = v.thumbnailObjectKey
-          ? await this.storage.getDownloadUrl(v.thumbnailObjectKey)
-          : null;
-        const subtitleUrl = v.subtitleObjectKey
-          ? await this.storage.getDownloadUrl(v.subtitleObjectKey)
-          : null;
-
-        return {
-          ...v,
-          videoUrl,
-          thumbnailUrl,
-          subtitleUrl,
-        };
-      }),
-    );
   }
 
   async findOne(id: string) {
-    const v = await this.prisma.video.findUnique({
-      where: { id },
-      include: {
-        idea: true,
-        job: true,
-      },
+    return this.getVideoOrThrow(id, {
+      idea: true,
+      job: true,
     });
-    if (!v) {
-      throw new NotFoundException('Không tìm thấy video');
-    }
-
-    const videoUrl = await this.storage.getDownloadUrl(v.videoObjectKey);
-    const thumbnailUrl = v.thumbnailObjectKey
-      ? await this.storage.getDownloadUrl(v.thumbnailObjectKey)
-      : null;
-    const subtitleUrl = v.subtitleObjectKey
-      ? await this.storage.getDownloadUrl(v.subtitleObjectKey)
-      : null;
-
-    return {
-      ...v,
-      videoUrl,
-      thumbnailUrl,
-      subtitleUrl,
-    };
   }
 
   async remove(id: string) {
-    const video = await this.findOne(id);
-    
+    const video = await this.getVideoOrThrow(id);
+
     // Delete files from storage
     try {
       await this.storage.deleteFile(video.videoObjectKey);
@@ -95,17 +72,17 @@ export class VideosService {
   }
 
   async regenerate(id: string) {
-    const video = await this.findOne(id);
+    const video = await this.getVideoOrThrow(id);
     return this.jobsService.retry(video.jobId);
   }
 
-  async getStream(id: string) {
-    const video = await this.findOne(id);
-    return this.storage.getFileStream(video.videoObjectKey);
+  async getStream(id: string, range?: string) {
+    const video = await this.getVideoOrThrow(id);
+    return this.storage.getFileStream(video.videoObjectKey, range);
   }
 
   async getThumbnail(id: string) {
-    const video = await this.findOne(id);
+    const video = await this.getVideoOrThrow(id);
     if (!video.thumbnailObjectKey) {
       throw new NotFoundException('Không tìm thấy thumbnail');
     }
@@ -113,7 +90,7 @@ export class VideosService {
   }
 
   async getSubtitle(id: string) {
-    const video = await this.findOne(id);
+    const video = await this.getVideoOrThrow(id);
     if (!video.subtitleObjectKey) {
       throw new NotFoundException('Không tìm thấy subtitle');
     }

@@ -6,9 +6,10 @@ import {
   Patch,
   Param,
   Delete,
-  NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { IdeasService } from './ideas.service';
+import { type VideoJobConfig } from '../queue/queue.service';
 
 @Controller('ideas')
 export class IdeasController {
@@ -46,7 +47,7 @@ export class IdeasController {
     @Body()
     dto: {
       topic: string;
-      config: any;
+      config: VideoJobConfig;
     },
   ) {
     return this.ideasService.batchGenerateVideo(dto.topic, dto.config);
@@ -93,13 +94,15 @@ export class IdeasController {
   async generateScript(@Param('id') id: string) {
     const script = await this.ideasService.generateScript(id);
     if (!script) {
-      throw new NotFoundException('Không thể tạo kịch bản: ý tưởng đã có kịch bản hoặc đang trong quá trình tạo');
+      throw new ConflictException(
+        'Không thể tạo kịch bản: ý tưởng đang trong quá trình tạo',
+      );
     }
     return { script };
   }
 
   @Post(':id/generate-video')
-  generateVideo(@Param('id') id: string, @Body() config: any) {
+  generateVideo(@Param('id') id: string, @Body() config: VideoJobConfig) {
     return this.ideasService.generateVideo(id, config);
   }
 }

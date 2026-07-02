@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -63,8 +61,6 @@ services:
       MINIO_BUCKET_NAME: "videos"
       PORT: 23001
     volumes:
-      - ./backend:/app
-      - /app/node_modules
       - ./engine:/app/engine
       - ./storage:/app/storage
     restart: always
@@ -80,10 +76,8 @@ services:
       - backend
     environment:
       API_UPSTREAM: "http://backend:23001"
-      MEDIA_PROXY_ALLOWED_HOSTS: "minio,localhost,127.0.0.1"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      MEDIA_PROXY_ALLOWED_HOSTS: "minio:9000"
+      MEDIA_PROXY_ALLOWED_PATH_PREFIXES: "/videos/"
     restart: always
 
 volumes:

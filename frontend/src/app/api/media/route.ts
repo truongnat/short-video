@@ -1,15 +1,34 @@
 import { NextRequest } from 'next/server';
 
-const DEFAULT_ALLOWED_HOSTS = ['minio', 'localhost', '127.0.0.1'];
+const DEFAULT_ALLOWED_UPSTREAMS = ['minio:9000'];
+const DEFAULT_ALLOWED_PATH_PREFIXES = ['/videos/'];
+const ALLOWED_CONTENT_TYPES = [
+  'image/',
+  'video/',
+  'audio/',
+  'text/vtt',
+  'application/octet-stream',
+  'application/vnd.apple.mpegurl',
+];
 
-function getAllowedHosts() {
-  const raw = process.env.MEDIA_PROXY_ALLOWED_HOSTS;
-  if (!raw) return DEFAULT_ALLOWED_HOSTS;
+function parseCsvEnv(raw: string | undefined, fallback: string[]) {
+  if (!raw) return fallback;
 
   return raw
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function getAllowedUpstreams() {
+  return parseCsvEnv(process.env.MEDIA_PROXY_ALLOWED_HOSTS, DEFAULT_ALLOWED_UPSTREAMS);
+}
+
+function getAllowedPathPrefixes() {
+  return parseCsvEnv(
+    process.env.MEDIA_PROXY_ALLOWED_PATH_PREFIXES,
+    DEFAULT_ALLOWED_PATH_PREFIXES,
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -29,9 +48,14 @@ export async function GET(request: NextRequest) {
     return new Response('Unsupported protocol', { status: 400 });
   }
 
-  const allowedHosts = getAllowedHosts();
-  if (!allowedHosts.includes(target.hostname)) {
-    return new Response('Host not allowed', { status: 403 });
+  const allowedUpstreams = getAllowedUpstreams();
+  if (!allowedUpstreams.includes(target.host)) {
+    return new Response('Upstream not allowed', { status: 403 });
+  }
+
+  const allowedPathPrefixes = getAllowedPathPrefixes();
+  if (!allowedPathPrefixes.some((prefix) => target.pathname.startsWith(prefix))) {
+    return new Response('Path not allowed', { status: 403 });
   }
 
   const upstream = await fetch(target, {
@@ -47,6 +71,12 @@ export async function GET(request: NextRequest) {
 
   const headers = new Headers();
   const contentType = upstream.headers.get('content-type');
+  if (
+    contentType &&
+    !ALLOWED_CONTENT_TYPES.some((allowedType) => contentType.startsWith(allowedType))
+  ) {
+    return new Response('Content type not allowed', { status: 415 });
+  }
   const contentLength = upstream.headers.get('content-length');
   const contentDisposition = upstream.headers.get('content-disposition');
 

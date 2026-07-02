@@ -5,6 +5,7 @@ import {
   Param,
   Delete,
   Res,
+  Headers,
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -35,19 +36,31 @@ export class VideosController {
   }
 
   @Get(':id/stream')
-  async stream(@Param('id') id: string, @Res({ passthrough: true }) res: Response) {
-    const file = await this.videosService.getStream(id);
+  async stream(
+    @Param('id') id: string,
+    @Headers('range') range: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const file = await this.videosService.getStream(id, range);
     if (file.contentType) {
       res.setHeader('Content-Type', file.contentType);
     }
     if (file.contentLength) {
       res.setHeader('Content-Length', String(file.contentLength));
     }
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (file.contentRange) {
+      res.setHeader('Content-Range', file.contentRange);
+      res.status(206);
+    }
     return new StreamableFile(file.stream);
   }
 
   @Get(':id/thumbnail')
-  async thumbnail(@Param('id') id: string, @Res({ passthrough: true }) res: Response) {
+  async thumbnail(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const file = await this.videosService.getThumbnail(id);
     if (file.contentType) {
       res.setHeader('Content-Type', file.contentType);
@@ -59,7 +72,10 @@ export class VideosController {
   }
 
   @Get(':id/subtitle')
-  async subtitle(@Param('id') id: string, @Res({ passthrough: true }) res: Response) {
+  async subtitle(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const file = await this.videosService.getSubtitle(id);
     if (file.contentType) {
       res.setHeader('Content-Type', file.contentType);
