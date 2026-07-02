@@ -1,0 +1,82 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Idea {
+  id          String   @id @default(uuid())
+  title       String
+  topic       String
+  description String?
+  script      String?
+  language    String   @default("vi")
+  tags        String[] @default([])
+  status      String   @default("draft") // draft, ready, archived
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  jobs   GenerationJob[]
+  videos Video[]
+
+  @@map("ideas")
+}
+
+model GenerationJob {
+  id           String    @id @default(uuid())
+  ideaId       String
+  idea         Idea      @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  status       String    @default("queued") // queued, running, completed, failed, cancelled
+  progress     Float     @default(0)
+  errorMessage String?
+  config       Json      @default("{}")
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  logs   JobLog[]
+  videos Video[]
+
+  @@map("generation_jobs")
+}
+
+model Video {
+  id                 String   @id @default(uuid())
+  ideaId             String
+  idea               Idea     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  jobId              String
+  job                GenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  title              String
+  script             String?
+  videoObjectKey     String
+  thumbnailObjectKey String?
+  subtitleObjectKey  String?
+  metadataObjectKey  String?
+  duration           Float?
+  ratio              String   @default("9:16")
+  createdAt          DateTime @default(now())
+
+  @@map("videos")
+}
+
+model JobLog {
+  id        String        @id @default(uuid())
+  jobId     String
+  job       GenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  level     String        @default("info") // info, warn, error
+  message   String
+  createdAt DateTime      @default(now())
+
+  @@map("job_logs")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
